@@ -5,7 +5,7 @@
  * @author      SEO Expert
  * @copyright   2024
  * @license     MIT
- * @version     2.0.0
+ * @version     2.1.0
  */
 
 if (!defined('_PS_VERSION_')) {
@@ -73,6 +73,10 @@ class ProSEOMaster extends Module
         'PROSEOMASTER_ENABLE_LAZY_LOADING',
         'PROSEOMASTER_ENABLE_RESOURCE_HINTS',
         'PROSEOMASTER_ENABLE_CRITICAL_CSS',
+        'PROSEOMASTER_ENABLE_DEFER_JS',
+        'PROSEOMASTER_ENABLE_IMAGE_DIMENSIONS',
+        'PROSEOMASTER_ENABLE_FONT_OPTIMIZATION',
+        'PROSEOMASTER_ENABLE_IFRAME_OPTIMIZATION',
         'PROSEOMASTER_AUTO_GENERATE_SITEMAP',
         'PROSEOMASTER_SITEMAP_LAST_GENERATED',
     );
@@ -81,7 +85,7 @@ class ProSEOMaster extends Module
     {
         $this->name = 'proseomaster';
         $this->tab = 'seo';
-        $this->version = '2.0.0';
+        $this->version = '2.1.0';
         $this->author = 'SEO Expert';
         $this->need_instance = 0;
         $this->bootstrap = true;
@@ -130,7 +134,11 @@ class ProSEOMaster extends Module
             'PROSEOMASTER_NOINDEX_DEEP_PAGINATION' => 1,
             'PROSEOMASTER_ENABLE_LAZY_LOADING' => 1,
             'PROSEOMASTER_ENABLE_RESOURCE_HINTS' => 1,
-            'PROSEOMASTER_ENABLE_CRITICAL_CSS' => 0,
+            'PROSEOMASTER_ENABLE_CRITICAL_CSS' => 1,
+            'PROSEOMASTER_ENABLE_DEFER_JS' => 1,
+            'PROSEOMASTER_ENABLE_IMAGE_DIMENSIONS' => 1,
+            'PROSEOMASTER_ENABLE_FONT_OPTIMIZATION' => 1,
+            'PROSEOMASTER_ENABLE_IFRAME_OPTIMIZATION' => 1,
             'PROSEOMASTER_AUTO_GENERATE_SITEMAP' => 0,
         );
 
@@ -220,6 +228,11 @@ class ProSEOMaster extends Module
             $output .= $this->runSeoAuditAction();
         }
 
+        // Handle .htaccess generation
+        if (Tools::isSubmit('generateHtaccess')) {
+            $output .= $this->generateHtaccessAction();
+        }
+
         // Render dashboard + forms
         return $output . $this->renderDashboard() . $this->renderForm() . $this->renderAdvancedForm();
     }
@@ -275,9 +288,14 @@ class ProSEOMaster extends Module
         $html .= '<i class="icon-file-text"></i> ' . $this->l('Generate Robots.txt');
         $html .= '</button></form>';
 
-        $html .= '<form method="post" style="display:inline-block;">';
+        $html .= '<form method="post" style="display:inline-block;margin-right:10px;">';
         $html .= '<button type="submit" name="runSeoAudit" class="btn btn-warning">';
         $html .= '<i class="icon-search"></i> ' . $this->l('Run SEO Audit');
+        $html .= '</button></form>';
+
+        $html .= '<form method="post" style="display:inline-block;">';
+        $html .= '<button type="submit" name="generateHtaccess" class="btn btn-success">';
+        $html .= '<i class="icon-rocket"></i> ' . $this->l('Generate .htaccess Rules');
         $html .= '</button></form>';
 
         $html .= '</div></div>';
@@ -433,6 +451,51 @@ class ProSEOMaster extends Module
             return $html;
         } catch (Exception $e) {
             return $this->displayError($this->l('Error running SEO audit: ') . $e->getMessage());
+        }
+    }
+
+    /**
+     * Generate .htaccess performance rules action
+     * @return string
+     */
+    protected function generateHtaccessAction()
+    {
+        try {
+            $performance = new ProSEOMasterPerformance();
+            $rules = $performance->generateHtaccessRules();
+
+            $htaccessPath = _PS_ROOT_DIR_ . '/.htaccess';
+
+            // Check if ProSEO rules already exist
+            if (file_exists($htaccessPath)) {
+                $currentContent = file_get_contents($htaccessPath);
+
+                // Remove old ProSEO rules if present
+                if (strpos($currentContent, '# BEGIN ProSEO Master Performance Rules') !== false) {
+                    $currentContent = preg_replace(
+                        '/# BEGIN ProSEO Master Performance Rules.*?# END ProSEO Master Performance Rules/s',
+                        '',
+                        $currentContent
+                    );
+                }
+
+                // Prepend new rules
+                $newContent = trim($rules) . "\n\n" . trim($currentContent);
+
+                // Backup original .htaccess
+                copy($htaccessPath, $htaccessPath . '.backup.' . date('YmdHis'));
+
+                // Write new content
+                if (file_put_contents($htaccessPath, $newContent)) {
+                    return $this->displayConfirmation(
+                        $this->l('.htaccess performance rules generated successfully! A backup was created.')
+                    );
+                }
+            }
+
+            return $this->displayError($this->l('Error: Could not write to .htaccess file. Please check permissions.'));
+        } catch (Exception $e) {
+            return $this->displayError($this->l('Error generating .htaccess rules: ') . $e->getMessage());
         }
     }
 
@@ -926,13 +989,43 @@ class ProSEOMaster extends Module
 
     /**
      * Hook: displayHeader
-     * Injects SEO meta tags and schema markup
+     * Injects SEO meta tags, schema markup, and performance optimizations
      * @param array $params
      * @return string
      */
     public function hookDisplayHeader($params)
     {
         $output = '';
+        $pageType = $this->getPageType();
+
+        // --- PERFORMANCE OPTIMIZATIONS ---
+
+        // 1. Resource hints (preconnect, dns-prefetch)
+        if (Configuration::get('PROSEOMASTER_ENABLE_RESOURCE_HINTS')) {
+            $performance = new ProSEOMasterPerformance();
+            $output .= $performance->generateResourceHints();
+            $output .= $performance->generatePreloadTags($pageType);
+        }
+
+        // 2. Font optimization
+        if (Configuration::get('PROSEOMASTER_ENABLE_FONT_OPTIMIZATION')) {
+            $performance = isset($performance) ? $performance : new ProSEOMasterPerformance();
+            $output .= $performance->generateFontOptimization();
+        }
+
+        // 3. Critical CSS inline (for FCP/LCP optimization)
+        if (Configuration::get('PROSEOMASTER_ENABLE_CRITICAL_CSS')) {
+            $performance = isset($performance) ? $performance : new ProSEOMasterPerformance();
+            $output .= $performance->getCriticalCss($pageType);
+        }
+
+        // 4. Performance meta tags
+        if (Configuration::get('PROSEOMASTER_ENABLE_RESOURCE_HINTS')) {
+            $performance = isset($performance) ? $performance : new ProSEOMasterPerformance();
+            $output .= $performance->generatePerformanceMetaTags();
+        }
+
+        // --- SEO OPTIMIZATIONS ---
 
         // Add Open Graph and Twitter Card meta tags
         $output .= $this->generateSocialMetaTags();
@@ -946,6 +1039,33 @@ class ProSEOMaster extends Module
         $output .= $this->generateSchemaMarkup();
 
         return $output;
+    }
+
+    /**
+     * Get current page type
+     * @return string
+     */
+    protected function getPageType()
+    {
+        $controller = $this->context->controller;
+        $page = $controller->getPageName();
+
+        switch ($page) {
+            case 'product':
+                return 'product';
+            case 'category':
+                return 'category';
+            case 'cart':
+            case 'order':
+            case 'order-opc':
+                return 'cart';
+            case 'cms':
+                return 'cms';
+            case 'index':
+                return 'index';
+            default:
+                return 'default';
+        }
     }
 
     /**
@@ -1903,15 +2023,55 @@ class ProSEOMaster extends Module
 
     /**
      * Hook: actionOutputHTMLBefore
-     * Modify HTML output for lazy loading
+     * Modify HTML output for performance optimization (Core Web Vitals)
      * @param array $params
      */
     public function hookActionOutputHTMLBefore($params)
     {
-        if (Configuration::get('PROSEOMASTER_ENABLE_LAZY_LOADING') && isset($params['html'])) {
-            $performance = new ProSEOMasterPerformance();
-            $params['html'] = $performance->addLazyLoading($params['html']);
+        if (!isset($params['html'])) {
+            return;
         }
+
+        $html = $params['html'];
+        $performance = new ProSEOMasterPerformance();
+
+        // 1. Add lazy loading to images (except above-the-fold)
+        if (Configuration::get('PROSEOMASTER_ENABLE_LAZY_LOADING')) {
+            $html = $performance->addLazyLoading($html);
+        }
+
+        // 2. Add explicit dimensions to images (prevents CLS)
+        if (Configuration::get('PROSEOMASTER_ENABLE_IMAGE_DIMENSIONS')) {
+            $html = $performance->addImageDimensions($html);
+        }
+
+        // 3. Defer non-critical JavaScript
+        if (Configuration::get('PROSEOMASTER_ENABLE_DEFER_JS')) {
+            $html = $performance->deferJavaScript($html);
+        }
+
+        // 4. Optimize iframes (lazy load, add dimensions)
+        if (Configuration::get('PROSEOMASTER_ENABLE_IFRAME_OPTIMIZATION')) {
+            $html = $performance->optimizeIframes($html);
+        }
+
+        // 5. Add fetchpriority to LCP candidates
+        if (Configuration::get('PROSEOMASTER_ENABLE_LAZY_LOADING')) {
+            $html = $performance->addFetchPriority($html);
+        }
+
+        // 6. Optimize font loading (non-blocking Google Fonts)
+        if (Configuration::get('PROSEOMASTER_ENABLE_FONT_OPTIMIZATION')) {
+            $html = $performance->inlinePreloadFonts($html);
+        }
+
+        // 7. Add inline performance script (before </body>)
+        if (Configuration::get('PROSEOMASTER_ENABLE_RESOURCE_HINTS')) {
+            $performanceScript = $performance->getPerformanceScript();
+            $html = str_replace('</body>', $performanceScript . "\n</body>", $html);
+        }
+
+        $params['html'] = $html;
     }
 
     /**
@@ -2098,12 +2258,25 @@ class ProSEOMaster extends Module
                         'title' => $this->l('Performance Optimization (Core Web Vitals)'),
                         'icon' => 'icon-rocket',
                     ),
+                    'description' => $this->l('Optimize your site for Google\'s Core Web Vitals: LCP (Largest Contentful Paint), FCP (First Contentful Paint), CLS (Cumulative Layout Shift), INP (Interaction to Next Paint). These settings help improve PageSpeed scores and organic rankings.'),
                     'input' => array(
+                        array(
+                            'type' => 'html',
+                            'name' => 'performance_info',
+                            'html_content' => '<div class="alert alert-info"><strong>' . $this->l('Performance Targets:') . '</strong><br>
+                                <ul style="margin:10px 0 0 20px;">
+                                    <li><strong>LCP:</strong> ' . $this->l('Should be under 2.5 seconds') . '</li>
+                                    <li><strong>FCP:</strong> ' . $this->l('Should be under 1.8 seconds') . '</li>
+                                    <li><strong>CLS:</strong> ' . $this->l('Should be under 0.1') . '</li>
+                                    <li><strong>TTFB:</strong> ' . $this->l('Should be under 0.8 seconds') . '</li>
+                                </ul>
+                            </div>',
+                        ),
                         array(
                             'type' => 'switch',
                             'label' => $this->l('Enable Lazy Loading'),
                             'name' => 'PROSEOMASTER_ENABLE_LAZY_LOADING',
-                            'desc' => $this->l('Add loading="lazy" to images for better LCP'),
+                            'desc' => $this->l('Add loading="lazy" to images below the fold. Improves LCP and initial page load by deferring non-critical images.'),
                             'is_bool' => true,
                             'values' => array(
                                 array('id' => 'active_on', 'value' => 1, 'label' => $this->l('Yes')),
@@ -2114,7 +2287,7 @@ class ProSEOMaster extends Module
                             'type' => 'switch',
                             'label' => $this->l('Enable Resource Hints'),
                             'name' => 'PROSEOMASTER_ENABLE_RESOURCE_HINTS',
-                            'desc' => $this->l('Add preconnect/prefetch hints for faster loading'),
+                            'desc' => $this->l('Add preconnect and dns-prefetch hints for external resources (Google Fonts, Analytics, etc.). Reduces TTFB.'),
                             'is_bool' => true,
                             'values' => array(
                                 array('id' => 'active_on', 'value' => 1, 'label' => $this->l('Yes')),
@@ -2125,12 +2298,61 @@ class ProSEOMaster extends Module
                             'type' => 'switch',
                             'label' => $this->l('Enable Critical CSS'),
                             'name' => 'PROSEOMASTER_ENABLE_CRITICAL_CSS',
-                            'desc' => $this->l('Inline critical CSS for faster First Contentful Paint'),
+                            'desc' => $this->l('Inline critical CSS for above-the-fold content. Dramatically improves FCP and LCP by rendering content faster.'),
                             'is_bool' => true,
                             'values' => array(
                                 array('id' => 'active_on', 'value' => 1, 'label' => $this->l('Yes')),
                                 array('id' => 'active_off', 'value' => 0, 'label' => $this->l('No')),
                             ),
+                        ),
+                        array(
+                            'type' => 'switch',
+                            'label' => $this->l('Enable Defer JavaScript'),
+                            'name' => 'PROSEOMASTER_ENABLE_DEFER_JS',
+                            'desc' => $this->l('Add defer/async to non-critical scripts. Improves INP and reduces render-blocking resources.'),
+                            'is_bool' => true,
+                            'values' => array(
+                                array('id' => 'active_on', 'value' => 1, 'label' => $this->l('Yes')),
+                                array('id' => 'active_off', 'value' => 0, 'label' => $this->l('No')),
+                            ),
+                        ),
+                        array(
+                            'type' => 'switch',
+                            'label' => $this->l('Enable Image Dimensions'),
+                            'name' => 'PROSEOMASTER_ENABLE_IMAGE_DIMENSIONS',
+                            'desc' => $this->l('Add explicit width/height and aspect-ratio to images. Prevents CLS (layout shifts) during image loading.'),
+                            'is_bool' => true,
+                            'values' => array(
+                                array('id' => 'active_on', 'value' => 1, 'label' => $this->l('Yes')),
+                                array('id' => 'active_off', 'value' => 0, 'label' => $this->l('No')),
+                            ),
+                        ),
+                        array(
+                            'type' => 'switch',
+                            'label' => $this->l('Enable Font Optimization'),
+                            'name' => 'PROSEOMASTER_ENABLE_FONT_OPTIMIZATION',
+                            'desc' => $this->l('Add font-display:swap and optimize Google Fonts loading. Prevents CLS from font loading and improves FCP.'),
+                            'is_bool' => true,
+                            'values' => array(
+                                array('id' => 'active_on', 'value' => 1, 'label' => $this->l('Yes')),
+                                array('id' => 'active_off', 'value' => 0, 'label' => $this->l('No')),
+                            ),
+                        ),
+                        array(
+                            'type' => 'switch',
+                            'label' => $this->l('Enable iFrame Optimization'),
+                            'name' => 'PROSEOMASTER_ENABLE_IFRAME_OPTIMIZATION',
+                            'desc' => $this->l('Add lazy loading and explicit dimensions to iframes (videos, maps). Reduces initial page weight and CLS.'),
+                            'is_bool' => true,
+                            'values' => array(
+                                array('id' => 'active_on', 'value' => 1, 'label' => $this->l('Yes')),
+                                array('id' => 'active_off', 'value' => 0, 'label' => $this->l('No')),
+                            ),
+                        ),
+                        array(
+                            'type' => 'html',
+                            'name' => 'htaccess_info',
+                            'html_content' => '<div class="alert alert-warning"><i class="icon-warning-sign"></i> <strong>' . $this->l('Server-Side Optimization:') . '</strong> ' . $this->l('Click "Generate .htaccess Rules" in the dashboard above to enable GZIP compression, browser caching, and other server-level optimizations. This is critical for TTFB improvement.') . '</div>',
                         ),
                     ),
                     'submit' => array(
