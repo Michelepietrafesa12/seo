@@ -5,12 +5,21 @@
  * @author      SEO Expert
  * @copyright   2024
  * @license     MIT
- * @version     1.0.0
+ * @version     2.0.0
  */
 
 if (!defined('_PS_VERSION_')) {
     exit;
 }
+
+// Include helper classes
+require_once dirname(__FILE__) . '/classes/ProSEOMasterHelper.php';
+require_once dirname(__FILE__) . '/classes/ProSEOMasterSitemap.php';
+require_once dirname(__FILE__) . '/classes/ProSEOMasterRobots.php';
+require_once dirname(__FILE__) . '/classes/ProSEOMasterMeta.php';
+require_once dirname(__FILE__) . '/classes/ProSEOMasterSchemaAdvanced.php';
+require_once dirname(__FILE__) . '/classes/ProSEOMasterPerformance.php';
+require_once dirname(__FILE__) . '/classes/ProSEOMasterAudit.php';
 
 class ProSEOMaster extends Module
 {
@@ -52,13 +61,27 @@ class ProSEOMaster extends Module
         'PROSEOMASTER_ENABLE_FAQ_SCHEMA',
         'PROSEOMASTER_ENABLE_REVIEW_SCHEMA',
         'PROSEOMASTER_MIN_REVIEWS_AGGREGATE',
+        // Advanced SEO settings
+        'PROSEOMASTER_ENABLE_COLLECTION_SCHEMA',
+        'PROSEOMASTER_ENABLE_MERCHANT_SCHEMA',
+        'PROSEOMASTER_PRODUCT_TITLE_TEMPLATE',
+        'PROSEOMASTER_PRODUCT_DESC_TEMPLATE',
+        'PROSEOMASTER_CATEGORY_TITLE_TEMPLATE',
+        'PROSEOMASTER_CATEGORY_DESC_TEMPLATE',
+        'PROSEOMASTER_NOINDEX_FILTERED_PAGES',
+        'PROSEOMASTER_NOINDEX_DEEP_PAGINATION',
+        'PROSEOMASTER_ENABLE_LAZY_LOADING',
+        'PROSEOMASTER_ENABLE_RESOURCE_HINTS',
+        'PROSEOMASTER_ENABLE_CRITICAL_CSS',
+        'PROSEOMASTER_AUTO_GENERATE_SITEMAP',
+        'PROSEOMASTER_SITEMAP_LAST_GENERATED',
     );
 
     public function __construct()
     {
         $this->name = 'proseomaster';
         $this->tab = 'seo';
-        $this->version = '1.0.0';
+        $this->version = '2.0.0';
         $this->author = 'SEO Expert';
         $this->need_instance = 0;
         $this->bootstrap = true;
@@ -96,6 +119,19 @@ class ProSEOMaster extends Module
             'PROSEOMASTER_BRAND_FIELD' => 'manufacturer',
             'PROSEOMASTER_CONDITION_FIELD' => 'condition',
             'PROSEOMASTER_BUSINESS_TYPE' => 'Store',
+            // Advanced SEO defaults
+            'PROSEOMASTER_ENABLE_COLLECTION_SCHEMA' => 1,
+            'PROSEOMASTER_ENABLE_MERCHANT_SCHEMA' => 1,
+            'PROSEOMASTER_PRODUCT_TITLE_TEMPLATE' => '{product_name} | {category} | {shop_name}',
+            'PROSEOMASTER_PRODUCT_DESC_TEMPLATE' => '{description_short} Acquista {product_name} online. {availability}. Spedizione veloce.',
+            'PROSEOMASTER_CATEGORY_TITLE_TEMPLATE' => '{category_name} | {shop_name}',
+            'PROSEOMASTER_CATEGORY_DESC_TEMPLATE' => 'Scopri la nostra selezione di {category_name}. {products_count} prodotti disponibili. Acquista online.',
+            'PROSEOMASTER_NOINDEX_FILTERED_PAGES' => 1,
+            'PROSEOMASTER_NOINDEX_DEEP_PAGINATION' => 1,
+            'PROSEOMASTER_ENABLE_LAZY_LOADING' => 1,
+            'PROSEOMASTER_ENABLE_RESOURCE_HINTS' => 1,
+            'PROSEOMASTER_ENABLE_CRITICAL_CSS' => 0,
+            'PROSEOMASTER_AUTO_GENERATE_SITEMAP' => 0,
         );
 
         foreach ($defaultConfig as $key => $value) {
@@ -106,6 +142,8 @@ class ProSEOMaster extends Module
             $this->registerHook('displayHeader') &&
             $this->registerHook('displayAfterBodyOpeningTag') &&
             $this->registerHook('actionFrontControllerSetMedia') &&
+            $this->registerHook('actionOutputHTMLBefore') &&
+            $this->registerHook('moduleRoutes') &&
             $this->installTab();
     }
 
@@ -162,11 +200,240 @@ class ProSEOMaster extends Module
     {
         $output = '';
 
+        // Handle form submissions
         if (Tools::isSubmit('submitProSEOMasterConfig')) {
             $output .= $this->postProcess();
         }
 
-        return $output . $this->renderForm();
+        // Handle sitemap generation
+        if (Tools::isSubmit('generateSitemap')) {
+            $output .= $this->generateSitemapAction();
+        }
+
+        // Handle robots.txt generation
+        if (Tools::isSubmit('generateRobots')) {
+            $output .= $this->generateRobotsAction();
+        }
+
+        // Handle SEO audit
+        if (Tools::isSubmit('runSeoAudit')) {
+            $output .= $this->runSeoAuditAction();
+        }
+
+        // Render dashboard + forms
+        return $output . $this->renderDashboard() . $this->renderForm() . $this->renderAdvancedForm();
+    }
+
+    /**
+     * Render SEO Dashboard with quick stats
+     * @return string
+     */
+    protected function renderDashboard()
+    {
+        $html = '<div class="panel">';
+        $html .= '<h3><i class="icon-dashboard"></i> ' . $this->l('SEO Dashboard') . '</h3>';
+        $html .= '<div class="row">';
+
+        // Quick stats
+        $html .= '<div class="col-lg-3 col-md-6">';
+        $html .= '<div class="panel" style="background:#00a65a;color:#fff;text-align:center;padding:20px;">';
+        $html .= '<h2 style="margin:0;">' . $this->getActiveProductCount() . '</h2>';
+        $html .= '<p style="margin:5px 0 0;">' . $this->l('Active Products') . '</p>';
+        $html .= '</div></div>';
+
+        $html .= '<div class="col-lg-3 col-md-6">';
+        $html .= '<div class="panel" style="background:#00c0ef;color:#fff;text-align:center;padding:20px;">';
+        $html .= '<h2 style="margin:0;">' . $this->getActiveCategoryCount() . '</h2>';
+        $html .= '<p style="margin:5px 0 0;">' . $this->l('Active Categories') . '</p>';
+        $html .= '</div></div>';
+
+        $html .= '<div class="col-lg-3 col-md-6">';
+        $sitemapDate = Configuration::get('PROSEOMASTER_SITEMAP_LAST_GENERATED');
+        $html .= '<div class="panel" style="background:#f39c12;color:#fff;text-align:center;padding:20px;">';
+        $html .= '<h2 style="margin:0;font-size:14px;">' . ($sitemapDate ? date('d/m/Y', strtotime($sitemapDate)) : 'N/A') . '</h2>';
+        $html .= '<p style="margin:5px 0 0;">' . $this->l('Last Sitemap') . '</p>';
+        $html .= '</div></div>';
+
+        $html .= '<div class="col-lg-3 col-md-6">';
+        $html .= '<div class="panel" style="background:#dd4b39;color:#fff;text-align:center;padding:20px;">';
+        $html .= '<h2 style="margin:0;">' . $this->getMissingMetaCount() . '</h2>';
+        $html .= '<p style="margin:5px 0 0;">' . $this->l('Missing Meta') . '</p>';
+        $html .= '</div></div>';
+
+        $html .= '</div>';
+
+        // Action buttons
+        $html .= '<div class="row" style="margin-top:15px;">';
+        $html .= '<div class="col-lg-12">';
+        $html .= '<form method="post" style="display:inline-block;margin-right:10px;">';
+        $html .= '<button type="submit" name="generateSitemap" class="btn btn-primary">';
+        $html .= '<i class="icon-sitemap"></i> ' . $this->l('Generate Sitemap');
+        $html .= '</button></form>';
+
+        $html .= '<form method="post" style="display:inline-block;margin-right:10px;">';
+        $html .= '<button type="submit" name="generateRobots" class="btn btn-info">';
+        $html .= '<i class="icon-file-text"></i> ' . $this->l('Generate Robots.txt');
+        $html .= '</button></form>';
+
+        $html .= '<form method="post" style="display:inline-block;">';
+        $html .= '<button type="submit" name="runSeoAudit" class="btn btn-warning">';
+        $html .= '<i class="icon-search"></i> ' . $this->l('Run SEO Audit');
+        $html .= '</button></form>';
+
+        $html .= '</div></div>';
+        $html .= '</div>';
+
+        return $html;
+    }
+
+    /**
+     * Get active product count
+     * @return int
+     */
+    protected function getActiveProductCount()
+    {
+        return (int) Db::getInstance()->getValue(
+            'SELECT COUNT(*) FROM ' . _DB_PREFIX_ . 'product p
+             INNER JOIN ' . _DB_PREFIX_ . 'product_shop ps ON p.id_product = ps.id_product
+             WHERE ps.active = 1 AND ps.id_shop = ' . (int) $this->context->shop->id
+        );
+    }
+
+    /**
+     * Get active category count
+     * @return int
+     */
+    protected function getActiveCategoryCount()
+    {
+        return (int) Db::getInstance()->getValue(
+            'SELECT COUNT(*) FROM ' . _DB_PREFIX_ . 'category c
+             INNER JOIN ' . _DB_PREFIX_ . 'category_shop cs ON c.id_category = cs.id_category
+             WHERE c.active = 1 AND cs.id_shop = ' . (int) $this->context->shop->id . ' AND c.id_category > 2'
+        );
+    }
+
+    /**
+     * Get count of products missing meta tags
+     * @return int
+     */
+    protected function getMissingMetaCount()
+    {
+        return (int) Db::getInstance()->getValue(
+            'SELECT COUNT(*) FROM ' . _DB_PREFIX_ . 'product p
+             INNER JOIN ' . _DB_PREFIX_ . 'product_shop ps ON p.id_product = ps.id_product
+             INNER JOIN ' . _DB_PREFIX_ . 'product_lang pl ON p.id_product = pl.id_product
+             WHERE ps.active = 1 AND ps.id_shop = ' . (int) $this->context->shop->id . '
+             AND pl.id_lang = ' . (int) $this->context->language->id . '
+             AND (pl.meta_title = "" OR pl.meta_title IS NULL OR pl.meta_description = "" OR pl.meta_description IS NULL)'
+        );
+    }
+
+    /**
+     * Generate sitemap action
+     * @return string
+     */
+    protected function generateSitemapAction()
+    {
+        try {
+            $sitemap = new ProSEOMasterSitemap();
+            $files = $sitemap->generateSitemap();
+            Configuration::updateValue('PROSEOMASTER_SITEMAP_LAST_GENERATED', date('Y-m-d H:i:s'));
+
+            // Submit to search engines
+            $sitemap->submitToSearchEngines();
+
+            return $this->displayConfirmation(
+                sprintf($this->l('Sitemap generated successfully! %d files created.'), count($files))
+            );
+        } catch (Exception $e) {
+            return $this->displayError($this->l('Error generating sitemap: ') . $e->getMessage());
+        }
+    }
+
+    /**
+     * Generate robots.txt action
+     * @return string
+     */
+    protected function generateRobotsAction()
+    {
+        try {
+            $robots = new ProSEOMasterRobots();
+            $robots->backupRobotsTxt();
+
+            if ($robots->saveRobotsTxt()) {
+                return $this->displayConfirmation($this->l('Robots.txt generated successfully!'));
+            } else {
+                return $this->displayError($this->l('Error saving robots.txt file.'));
+            }
+        } catch (Exception $e) {
+            return $this->displayError($this->l('Error generating robots.txt: ') . $e->getMessage());
+        }
+    }
+
+    /**
+     * Run SEO audit action
+     * @return string
+     */
+    protected function runSeoAuditAction()
+    {
+        try {
+            $audit = new ProSEOMasterAudit();
+            $results = $audit->runFullAudit();
+
+            $html = '<div class="panel">';
+            $html .= '<h3><i class="icon-search"></i> ' . $this->l('SEO Audit Results') . '</h3>';
+
+            // Score display
+            $score = $results['score'];
+            $scoreColor = $audit->getScoreColor($score);
+            $scoreLabel = $audit->getScoreLabel($score);
+
+            $html .= '<div style="text-align:center;padding:20px;">';
+            $html .= '<div style="display:inline-block;width:120px;height:120px;border-radius:50%;background:' . $scoreColor . ';color:#fff;line-height:120px;font-size:36px;font-weight:bold;">';
+            $html .= $score;
+            $html .= '</div>';
+            $html .= '<p style="font-size:18px;margin-top:10px;"><strong>' . $scoreLabel . '</strong></p>';
+            $html .= '</div>';
+
+            // Summary
+            $html .= '<div class="row">';
+            $html .= '<div class="col-md-3 text-center"><span class="badge" style="background:#dd4b39;font-size:16px;padding:10px 15px;">' . $results['summary']['critical'] . '</span><br>' . $this->l('Critical') . '</div>';
+            $html .= '<div class="col-md-3 text-center"><span class="badge" style="background:#f39c12;font-size:16px;padding:10px 15px;">' . $results['summary']['warning'] . '</span><br>' . $this->l('Warnings') . '</div>';
+            $html .= '<div class="col-md-3 text-center"><span class="badge" style="background:#00c0ef;font-size:16px;padding:10px 15px;">' . $results['summary']['notice'] . '</span><br>' . $this->l('Notices') . '</div>';
+            $html .= '<div class="col-md-3 text-center"><span class="badge" style="background:#00a65a;font-size:16px;padding:10px 15px;">' . $results['summary']['passed'] . '</span><br>' . $this->l('Passed') . '</div>';
+            $html .= '</div>';
+
+            // Issues list
+            $allIssues = array();
+            foreach ($results['results'] as $key => $value) {
+                if (strpos($key, '_issues') !== false && is_array($value)) {
+                    $allIssues = array_merge($allIssues, $value);
+                }
+            }
+
+            if (!empty($allIssues)) {
+                $html .= '<hr><h4>' . $this->l('Issues Found') . '</h4>';
+                $html .= '<table class="table">';
+                $html .= '<thead><tr><th>' . $this->l('Severity') . '</th><th>' . $this->l('Issue') . '</th><th>' . $this->l('Solution') . '</th></tr></thead><tbody>';
+
+                foreach ($allIssues as $issue) {
+                    $severityClass = $issue['severity'] === 'critical' ? 'danger' : ($issue['severity'] === 'warning' ? 'warning' : 'info');
+                    $html .= '<tr class="' . $severityClass . '">';
+                    $html .= '<td><span class="label label-' . $severityClass . '">' . ucfirst($issue['severity']) . '</span></td>';
+                    $html .= '<td>' . $issue['message'] . '</td>';
+                    $html .= '<td>' . ($issue['solution'] ?? '-') . '</td>';
+                    $html .= '</tr>';
+                }
+
+                $html .= '</tbody></table>';
+            }
+
+            $html .= '</div>';
+
+            return $html;
+        } catch (Exception $e) {
+            return $this->displayError($this->l('Error running SEO audit: ') . $e->getMessage());
+        }
     }
 
     /**
@@ -1623,6 +1890,254 @@ class ProSEOMaster extends Module
      */
     public function hookActionFrontControllerSetMedia($params)
     {
-        // This hook can be used to add CSS/JS if needed in the future
+        // Add resource hints for performance
+        if (Configuration::get('PROSEOMASTER_ENABLE_RESOURCE_HINTS')) {
+            $performance = new ProSEOMasterPerformance();
+            $this->context->controller->registerJavascript(
+                'proseomaster-performance',
+                'modules/' . $this->name . '/views/js/performance.js',
+                array('position' => 'bottom', 'priority' => 1000)
+            );
+        }
+    }
+
+    /**
+     * Hook: actionOutputHTMLBefore
+     * Modify HTML output for lazy loading
+     * @param array $params
+     */
+    public function hookActionOutputHTMLBefore($params)
+    {
+        if (Configuration::get('PROSEOMASTER_ENABLE_LAZY_LOADING') && isset($params['html'])) {
+            $performance = new ProSEOMasterPerformance();
+            $params['html'] = $performance->addLazyLoading($params['html']);
+        }
+    }
+
+    /**
+     * Hook: moduleRoutes
+     * Add custom routes for sitemap access
+     * @return array
+     */
+    public function hookModuleRoutes()
+    {
+        return array(
+            'module-proseomaster-sitemap' => array(
+                'controller' => 'sitemap',
+                'rule' => 'sitemap.xml',
+                'keywords' => array(),
+                'params' => array(
+                    'fc' => 'module',
+                    'module' => 'proseomaster',
+                ),
+            ),
+        );
+    }
+
+    /**
+     * Render advanced configuration form
+     * @return string
+     */
+    protected function renderAdvancedForm()
+    {
+        $helper = new HelperForm();
+        $helper->show_toolbar = false;
+        $helper->table = $this->table;
+        $helper->default_form_language = (int) Configuration::get('PS_LANG_DEFAULT');
+        $helper->allow_employee_form_lang = Configuration::get('PS_BO_ALLOW_EMPLOYEE_FORM_LANG') ? Configuration::get('PS_BO_ALLOW_EMPLOYEE_FORM_LANG') : 0;
+        $helper->identifier = $this->identifier;
+        $helper->submit_action = 'submitProSEOMasterConfig';
+        $helper->currentIndex = $this->context->link->getAdminLink('AdminModules', false) . '&configure=' . $this->name . '&tab_module=' . $this->tab . '&module_name=' . $this->name;
+        $helper->token = Tools::getAdminTokenLite('AdminModules');
+        $helper->tpl_vars = array(
+            'fields_value' => $this->getConfigFieldsValues(),
+            'languages' => $this->context->controller->getLanguages(),
+            'id_language' => $this->context->language->id,
+        );
+
+        return $helper->generateForm($this->getAdvancedConfigForm());
+    }
+
+    /**
+     * Get advanced configuration form structure
+     * @return array
+     */
+    protected function getAdvancedConfigForm()
+    {
+        return array(
+            // Meta Tags Templates
+            array(
+                'form' => array(
+                    'legend' => array(
+                        'title' => $this->l('Meta Tags Templates'),
+                        'icon' => 'icon-edit',
+                    ),
+                    'description' => $this->l('Configure dynamic meta tag templates. Available placeholders: {product_name}, {category}, {shop_name}, {price}, {description_short}, {availability}, {products_count}'),
+                    'input' => array(
+                        array(
+                            'type' => 'text',
+                            'label' => $this->l('Product Title Template'),
+                            'name' => 'PROSEOMASTER_PRODUCT_TITLE_TEMPLATE',
+                            'desc' => $this->l('Template for product page titles'),
+                            'class' => 'input-xxlarge',
+                        ),
+                        array(
+                            'type' => 'textarea',
+                            'label' => $this->l('Product Description Template'),
+                            'name' => 'PROSEOMASTER_PRODUCT_DESC_TEMPLATE',
+                            'desc' => $this->l('Template for product meta descriptions'),
+                            'rows' => 3,
+                        ),
+                        array(
+                            'type' => 'text',
+                            'label' => $this->l('Category Title Template'),
+                            'name' => 'PROSEOMASTER_CATEGORY_TITLE_TEMPLATE',
+                            'desc' => $this->l('Template for category page titles'),
+                            'class' => 'input-xxlarge',
+                        ),
+                        array(
+                            'type' => 'textarea',
+                            'label' => $this->l('Category Description Template'),
+                            'name' => 'PROSEOMASTER_CATEGORY_DESC_TEMPLATE',
+                            'desc' => $this->l('Template for category meta descriptions'),
+                            'rows' => 3,
+                        ),
+                    ),
+                    'submit' => array(
+                        'title' => $this->l('Save'),
+                    ),
+                ),
+            ),
+            // Advanced Schema
+            array(
+                'form' => array(
+                    'legend' => array(
+                        'title' => $this->l('Advanced Schema Markup'),
+                        'icon' => 'icon-code',
+                    ),
+                    'input' => array(
+                        array(
+                            'type' => 'switch',
+                            'label' => $this->l('Enable CollectionPage Schema'),
+                            'name' => 'PROSEOMASTER_ENABLE_COLLECTION_SCHEMA',
+                            'desc' => $this->l('Add CollectionPage schema to category pages'),
+                            'is_bool' => true,
+                            'values' => array(
+                                array('id' => 'active_on', 'value' => 1, 'label' => $this->l('Yes')),
+                                array('id' => 'active_off', 'value' => 0, 'label' => $this->l('No')),
+                            ),
+                        ),
+                        array(
+                            'type' => 'switch',
+                            'label' => $this->l('Enable Merchant Center Schema'),
+                            'name' => 'PROSEOMASTER_ENABLE_MERCHANT_SCHEMA',
+                            'desc' => $this->l('Add Google Merchant Center compatible product data'),
+                            'is_bool' => true,
+                            'values' => array(
+                                array('id' => 'active_on', 'value' => 1, 'label' => $this->l('Yes')),
+                                array('id' => 'active_off', 'value' => 0, 'label' => $this->l('No')),
+                            ),
+                        ),
+                        array(
+                            'type' => 'switch',
+                            'label' => $this->l('Enable FAQ Schema'),
+                            'name' => 'PROSEOMASTER_ENABLE_FAQ_SCHEMA',
+                            'desc' => $this->l('Generate FAQ schema from product features'),
+                            'is_bool' => true,
+                            'values' => array(
+                                array('id' => 'active_on', 'value' => 1, 'label' => $this->l('Yes')),
+                                array('id' => 'active_off', 'value' => 0, 'label' => $this->l('No')),
+                            ),
+                        ),
+                    ),
+                    'submit' => array(
+                        'title' => $this->l('Save'),
+                    ),
+                ),
+            ),
+            // Crawl Optimization
+            array(
+                'form' => array(
+                    'legend' => array(
+                        'title' => $this->l('Crawl Optimization'),
+                        'icon' => 'icon-search',
+                    ),
+                    'input' => array(
+                        array(
+                            'type' => 'switch',
+                            'label' => $this->l('Noindex Filtered Pages'),
+                            'name' => 'PROSEOMASTER_NOINDEX_FILTERED_PAGES',
+                            'desc' => $this->l('Add noindex to category pages with filters applied'),
+                            'is_bool' => true,
+                            'values' => array(
+                                array('id' => 'active_on', 'value' => 1, 'label' => $this->l('Yes')),
+                                array('id' => 'active_off', 'value' => 0, 'label' => $this->l('No')),
+                            ),
+                        ),
+                        array(
+                            'type' => 'switch',
+                            'label' => $this->l('Noindex Deep Pagination'),
+                            'name' => 'PROSEOMASTER_NOINDEX_DEEP_PAGINATION',
+                            'desc' => $this->l('Add noindex to paginated pages beyond page 5'),
+                            'is_bool' => true,
+                            'values' => array(
+                                array('id' => 'active_on', 'value' => 1, 'label' => $this->l('Yes')),
+                                array('id' => 'active_off', 'value' => 0, 'label' => $this->l('No')),
+                            ),
+                        ),
+                    ),
+                    'submit' => array(
+                        'title' => $this->l('Save'),
+                    ),
+                ),
+            ),
+            // Performance Optimization
+            array(
+                'form' => array(
+                    'legend' => array(
+                        'title' => $this->l('Performance Optimization (Core Web Vitals)'),
+                        'icon' => 'icon-rocket',
+                    ),
+                    'input' => array(
+                        array(
+                            'type' => 'switch',
+                            'label' => $this->l('Enable Lazy Loading'),
+                            'name' => 'PROSEOMASTER_ENABLE_LAZY_LOADING',
+                            'desc' => $this->l('Add loading="lazy" to images for better LCP'),
+                            'is_bool' => true,
+                            'values' => array(
+                                array('id' => 'active_on', 'value' => 1, 'label' => $this->l('Yes')),
+                                array('id' => 'active_off', 'value' => 0, 'label' => $this->l('No')),
+                            ),
+                        ),
+                        array(
+                            'type' => 'switch',
+                            'label' => $this->l('Enable Resource Hints'),
+                            'name' => 'PROSEOMASTER_ENABLE_RESOURCE_HINTS',
+                            'desc' => $this->l('Add preconnect/prefetch hints for faster loading'),
+                            'is_bool' => true,
+                            'values' => array(
+                                array('id' => 'active_on', 'value' => 1, 'label' => $this->l('Yes')),
+                                array('id' => 'active_off', 'value' => 0, 'label' => $this->l('No')),
+                            ),
+                        ),
+                        array(
+                            'type' => 'switch',
+                            'label' => $this->l('Enable Critical CSS'),
+                            'name' => 'PROSEOMASTER_ENABLE_CRITICAL_CSS',
+                            'desc' => $this->l('Inline critical CSS for faster First Contentful Paint'),
+                            'is_bool' => true,
+                            'values' => array(
+                                array('id' => 'active_on', 'value' => 1, 'label' => $this->l('Yes')),
+                                array('id' => 'active_off', 'value' => 0, 'label' => $this->l('No')),
+                            ),
+                        ),
+                    ),
+                    'submit' => array(
+                        'title' => $this->l('Save'),
+                    ),
+                ),
+            ),
+        );
     }
 }
