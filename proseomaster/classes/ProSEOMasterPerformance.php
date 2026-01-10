@@ -97,6 +97,39 @@ class ProSEOMasterPerformance
             $output .= '<link rel="dns-prefetch" href="//' . $domain . '">' . "\n";
         }
 
+        // Preload critical theme CSS to avoid render-blocking
+        $output .= $this->generateCssPreloads();
+
+        return $output;
+    }
+
+    /**
+     * Generate CSS preloads to eliminate render-blocking CSS
+     * @return string
+     */
+    protected function generateCssPreloads()
+    {
+        $output = '<!-- ProSEO Master: CSS Preloads -->' . "\n";
+
+        // Detect theme CSS files
+        $themeCssPath = _PS_THEME_DIR_ . 'assets/css/';
+        $cssFiles = array();
+
+        // Common theme CSS files to preload
+        $criticalCssFiles = array(
+            'theme.css',
+            'custom.css',
+            'style.css',
+        );
+
+        foreach ($criticalCssFiles as $cssFile) {
+            if (file_exists($themeCssPath . $cssFile)) {
+                $cssUrl = _THEME_CSS_DIR_ . $cssFile . '?v=' . filemtime($themeCssPath . $cssFile);
+                $output .= '<link rel="preload" href="' . $cssUrl . '" as="style" onload="this.onload=null;this.rel=\'stylesheet\'">' . "\n";
+                $output .= '<noscript><link rel="stylesheet" href="' . $cssUrl . '"></noscript>' . "\n";
+            }
+        }
+
         return $output;
     }
 
@@ -522,28 +555,57 @@ class ProSEOMasterPerformance
                 $imgTag = $matches[0];
                 $attrs = $matches[1];
 
-                // Skip if already has both width and height
-                if (preg_match('/\bwidth=/i', $attrs) && preg_match('/\bheight=/i', $attrs)) {
+                // Skip if already has both width and height with numeric values
+                if (preg_match('/\bwidth\s*=\s*["\']?\d+/i', $attrs) && preg_match('/\bheight\s*=\s*["\']?\d+/i', $attrs)) {
                     return $imgTag;
                 }
 
                 // Try to get dimensions from src
+                $width = null;
+                $height = null;
+
                 if (preg_match('/src=["\']([^"\']+)["\']/i', $attrs, $srcMatch)) {
                     $src = $srcMatch[1];
 
-                    // Add aspect-ratio via style for responsive images
-                    if (!preg_match('/\bstyle=/i', $attrs)) {
-                        // Default aspect ratio 1:1 for product images
-                        $imgTag = str_replace('<img', '<img style="aspect-ratio:1/1;object-fit:contain"', $imgTag);
+                    // Try to get real dimensions from local file
+                    $dimensions = $this->getImageDimensions($src);
+                    if ($dimensions) {
+                        $width = $dimensions['width'];
+                        $height = $dimensions['height'];
+                    } else {
+                        // Detect dimensions from URL pattern (PrestaShop image types)
+                        $dimensions = $this->detectDimensionsFromUrl($src);
+                        if ($dimensions) {
+                            $width = $dimensions['width'];
+                            $height = $dimensions['height'];
+                        }
                     }
                 }
 
-                // Add default dimensions if missing
-                if (!preg_match('/\bwidth=/i', $attrs)) {
-                    $imgTag = str_replace('<img', '<img width="auto"', $imgTag);
-                }
-                if (!preg_match('/\bheight=/i', $attrs)) {
-                    $imgTag = str_replace('<img', '<img height="auto"', $imgTag);
+                // Apply dimensions
+                if ($width && $height) {
+                    // Add explicit width and height
+                    if (!preg_match('/\bwidth=/i', $attrs)) {
+                        $imgTag = str_replace('<img', '<img width="' . $width . '"', $imgTag);
+                    }
+                    if (!preg_match('/\bheight=/i', $attrs)) {
+                        $imgTag = str_replace('<img', '<img height="' . $height . '"', $imgTag);
+                    }
+                } else {
+                    // Fallback: Add aspect-ratio for common image types
+                    $aspectRatio = $this->detectAspectRatio($attrs);
+
+                    if (!preg_match('/\bstyle=/i', $attrs)) {
+                        $imgTag = str_replace('<img', '<img style="aspect-ratio:' . $aspectRatio . ';object-fit:contain;width:100%;height:auto"', $imgTag);
+                    }
+
+                    // Add placeholder dimensions
+                    if (!preg_match('/\bwidth=/i', $attrs)) {
+                        $imgTag = str_replace('<img', '<img width="300"', $imgTag);
+                    }
+                    if (!preg_match('/\bheight=/i', $attrs)) {
+                        $imgTag = str_replace('<img', '<img height="300"', $imgTag);
+                    }
                 }
 
                 return $imgTag;
@@ -552,6 +614,97 @@ class ProSEOMasterPerformance
         );
 
         return $html;
+    }
+
+    /**
+     * Get image dimensions from local file
+     * @param string $src
+     * @return array|null
+     */
+    protected function getImageDimensions($src)
+    {
+        // Convert URL to local path
+        $localPath = null;
+
+        if (strpos($src, _PS_BASE_URL_) !== false) {
+            $localPath = str_replace(_PS_BASE_URL_, _PS_ROOT_DIR_ . '/', $src);
+        } elseif (strpos($src, '/') === 0) {
+            $localPath = _PS_ROOT_DIR_ . $src;
+        }
+
+        // Remove query string
+        if ($localPath && strpos($localPath, '?') !== false) {
+            $localPath = substr($localPath, 0, strpos($localPath, '?'));
+        }
+
+        if ($localPath && file_exists($localPath)) {
+            $size = @getimagesize($localPath);
+            if ($size && $size[0] > 0 && $size[1] > 0) {
+                return array(
+                    'width' => $size[0],
+                    'height' => $size[1],
+                );
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Detect dimensions from PrestaShop image URL pattern
+     * @param string $src
+     * @return array|null
+     */
+    protected function detectDimensionsFromUrl($src)
+    {
+        // PrestaShop image type dimensions
+        $imageTypes = array(
+            'large' => array('width' => 800, 'height' => 800),
+            'home' => array('width' => 250, 'height' => 250),
+            'medium' => array('width' => 452, 'height' => 452),
+            'small' => array('width' => 98, 'height' => 98),
+            'cart' => array('width' => 125, 'height' => 125),
+            'category' => array('width' => 960, 'height' => 350),
+        );
+
+        foreach ($imageTypes as $type => $dims) {
+            if (preg_match('/_' . $type . '\./', $src) || preg_match('/-' . $type . '\./', $src)) {
+                return $dims;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Detect appropriate aspect ratio based on image context
+     * @param string $attrs
+     * @return string
+     */
+    protected function detectAspectRatio($attrs)
+    {
+        // Product images: 1:1
+        if (preg_match('/product|thumbnail|cart|miniature/i', $attrs)) {
+            return '1/1';
+        }
+
+        // Banner/slider images: 16:9
+        if (preg_match('/banner|slider|carousel|hero/i', $attrs)) {
+            return '16/9';
+        }
+
+        // Category images: wider
+        if (preg_match('/category/i', $attrs)) {
+            return '3/1';
+        }
+
+        // Logo: assume wider
+        if (preg_match('/logo/i', $attrs)) {
+            return '3/1';
+        }
+
+        // Default: square
+        return '1/1';
     }
 
     /**

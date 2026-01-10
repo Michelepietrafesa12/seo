@@ -5,7 +5,7 @@
  * @author      SEO Expert
  * @copyright   2024
  * @license     MIT
- * @version     2.2.0
+ * @version     2.3.0
  */
 
 if (!defined('_PS_VERSION_')) {
@@ -90,7 +90,7 @@ class ProSEOMaster extends Module
     {
         $this->name = 'proseomaster';
         $this->tab = 'seo';
-        $this->version = '2.2.0';
+        $this->version = '2.3.0';
         $this->author = 'SEO Expert';
         $this->need_instance = 0;
         $this->bootstrap = true;
@@ -1644,7 +1644,161 @@ class ProSEOMaster extends Module
             $schema['category'] = $category->name;
         }
 
+        // Product ID - Important for Google Merchant Center
+        $schema['productID'] = (string) $product->id;
+
+        // Color attribute (if available)
+        $color = $this->getProductAttribute($product, 'color');
+        if (!empty($color)) {
+            $schema['color'] = $color;
+        }
+
+        // Size attribute (if available)
+        $size = $this->getProductAttribute($product, 'size');
+        if (!empty($size)) {
+            $schema['size'] = $size;
+        }
+
+        // Material attribute (if available)
+        $material = $this->getProductAttribute($product, 'material');
+        if (!empty($material)) {
+            $schema['material'] = $material;
+        }
+
+        // Additional product features
+        $features = $this->getProductFeatures($product);
+        if (!empty($features)) {
+            $schema['additionalProperty'] = $features;
+        }
+
+        // Merchant Return Policy - Required by Google Merchant Center
+        $returnPolicy = $this->generateReturnPolicySchema();
+        if (!empty($returnPolicy)) {
+            $schema['offers']['hasMerchantReturnPolicy'] = $returnPolicy;
+        }
+
+        // Shipping details in offer
+        if (isset($schema['offers']) && is_array($schema['offers'])) {
+            $schema['offers']['shippingDetails'] = $this->generateShippingSchema();
+        }
+
         return $schema;
+    }
+
+    /**
+     * Get product attribute value by type
+     * @param Product $product
+     * @param string $attributeType (color, size, material)
+     * @return string|null
+     */
+    protected function getProductAttribute($product, $attributeType)
+    {
+        // Map attribute type to group names (multilingual support)
+        $groupNames = array(
+            'color' => array('color', 'colore', 'couleur', 'farbe', 'colour', 'cor'),
+            'size' => array('size', 'taglia', 'taille', 'größe', 'groesse', 'tamaño', 'tamanho'),
+            'material' => array('material', 'materiale', 'matériau', 'matière'),
+        );
+
+        if (!isset($groupNames[$attributeType])) {
+            return null;
+        }
+
+        $combinations = $product->getAttributeCombinations($this->context->language->id);
+
+        foreach ($combinations as $combination) {
+            $groupName = strtolower($combination['group_name']);
+            if (in_array($groupName, $groupNames[$attributeType])) {
+                return $combination['attribute_name'];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Get product features as additionalProperty
+     * @param Product $product
+     * @return array
+     */
+    protected function getProductFeatures($product)
+    {
+        $features = array();
+        $productFeatures = $product->getFeatures();
+
+        foreach ($productFeatures as $feature) {
+            $featureName = new Feature($feature['id_feature'], $this->context->language->id);
+            $featureValue = new FeatureValue($feature['id_feature_value'], $this->context->language->id);
+
+            if (Validate::isLoadedObject($featureName) && Validate::isLoadedObject($featureValue)) {
+                $features[] = array(
+                    '@type' => 'PropertyValue',
+                    'name' => $featureName->name,
+                    'value' => $featureValue->value,
+                );
+            }
+        }
+
+        return $features;
+    }
+
+    /**
+     * Generate MerchantReturnPolicy schema
+     * Required by Google Merchant Center for product rich results
+     * @return array
+     */
+    protected function generateReturnPolicySchema()
+    {
+        $shopUrl = $this->context->link->getPageLink('index', true);
+
+        return array(
+            '@type' => 'MerchantReturnPolicy',
+            '@id' => $shopUrl . '#returnpolicy',
+            'applicableCountry' => $this->context->country->iso_code,
+            'returnPolicyCategory' => 'https://schema.org/MerchantReturnFiniteReturnWindow',
+            'merchantReturnDays' => 14,
+            'returnMethod' => 'https://schema.org/ReturnByMail',
+            'returnFees' => 'https://schema.org/FreeReturn',
+        );
+    }
+
+    /**
+     * Generate OfferShippingDetails schema
+     * @return array
+     */
+    protected function generateShippingSchema()
+    {
+        $shopUrl = $this->context->link->getPageLink('index', true);
+        $currency = $this->context->currency->iso_code;
+
+        return array(
+            '@type' => 'OfferShippingDetails',
+            '@id' => $shopUrl . '#shipping',
+            'shippingDestination' => array(
+                '@type' => 'DefinedRegion',
+                'addressCountry' => $this->context->country->iso_code,
+            ),
+            'shippingRate' => array(
+                '@type' => 'MonetaryAmount',
+                'value' => '0',
+                'currency' => $currency,
+            ),
+            'deliveryTime' => array(
+                '@type' => 'ShippingDeliveryTime',
+                'handlingTime' => array(
+                    '@type' => 'QuantitativeValue',
+                    'minValue' => 0,
+                    'maxValue' => 2,
+                    'unitCode' => 'DAY',
+                ),
+                'transitTime' => array(
+                    '@type' => 'QuantitativeValue',
+                    'minValue' => 1,
+                    'maxValue' => 5,
+                    'unitCode' => 'DAY',
+                ),
+            ),
+        );
     }
 
     /**
