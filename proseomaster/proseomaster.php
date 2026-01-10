@@ -5,7 +5,7 @@
  * @author      SEO Expert
  * @copyright   2024
  * @license     MIT
- * @version     2.1.0
+ * @version     2.2.0
  */
 
 if (!defined('_PS_VERSION_')) {
@@ -20,6 +20,7 @@ require_once dirname(__FILE__) . '/classes/ProSEOMasterMeta.php';
 require_once dirname(__FILE__) . '/classes/ProSEOMasterSchemaAdvanced.php';
 require_once dirname(__FILE__) . '/classes/ProSEOMasterPerformance.php';
 require_once dirname(__FILE__) . '/classes/ProSEOMasterAudit.php';
+require_once dirname(__FILE__) . '/classes/ProSEOMasterAI.php';
 
 class ProSEOMaster extends Module
 {
@@ -79,13 +80,17 @@ class ProSEOMaster extends Module
         'PROSEOMASTER_ENABLE_IFRAME_OPTIMIZATION',
         'PROSEOMASTER_AUTO_GENERATE_SITEMAP',
         'PROSEOMASTER_SITEMAP_LAST_GENERATED',
+        // AI Optimization
+        'PROSEOMASTER_ENABLE_AI_SEO',
+        'PROSEOMASTER_ENABLE_LLMS_TXT',
+        'PROSEOMASTER_ENABLE_AI_META_TAGS',
     );
 
     public function __construct()
     {
         $this->name = 'proseomaster';
         $this->tab = 'seo';
-        $this->version = '2.1.0';
+        $this->version = '2.2.0';
         $this->author = 'SEO Expert';
         $this->need_instance = 0;
         $this->bootstrap = true;
@@ -140,6 +145,10 @@ class ProSEOMaster extends Module
             'PROSEOMASTER_ENABLE_FONT_OPTIMIZATION' => 1,
             'PROSEOMASTER_ENABLE_IFRAME_OPTIMIZATION' => 1,
             'PROSEOMASTER_AUTO_GENERATE_SITEMAP' => 0,
+            // AI Optimization defaults
+            'PROSEOMASTER_ENABLE_AI_SEO' => 1,
+            'PROSEOMASTER_ENABLE_LLMS_TXT' => 1,
+            'PROSEOMASTER_ENABLE_AI_META_TAGS' => 1,
         );
 
         foreach ($defaultConfig as $key => $value) {
@@ -1023,6 +1032,14 @@ class ProSEOMaster extends Module
         if (Configuration::get('PROSEOMASTER_ENABLE_RESOURCE_HINTS')) {
             $performance = isset($performance) ? $performance : new ProSEOMasterPerformance();
             $output .= $performance->generatePerformanceMetaTags();
+        }
+
+        // --- AI SEO OPTIMIZATIONS ---
+
+        // Add AI-specific meta tags (Google AI Mode, GPT, Claude, etc.)
+        if (Configuration::get('PROSEOMASTER_ENABLE_AI_META_TAGS')) {
+            $ai = new ProSEOMasterAI();
+            $output .= $ai->generateAIMetaTags();
         }
 
         // --- SEO OPTIMIZATIONS ---
@@ -2033,40 +2050,52 @@ class ProSEOMaster extends Module
         }
 
         $html = $params['html'];
+        $pageType = $this->getPageType();
+
+        // SAFETY: Disable risky optimizations on checkout/payment/order pages
+        $isCheckoutPage = $this->isCheckoutOrPaymentPage();
+
         $performance = new ProSEOMasterPerformance();
 
         // 1. Add lazy loading to images (except above-the-fold)
+        // SAFE on checkout - only affects image loading
         if (Configuration::get('PROSEOMASTER_ENABLE_LAZY_LOADING')) {
             $html = $performance->addLazyLoading($html);
         }
 
         // 2. Add explicit dimensions to images (prevents CLS)
+        // SAFE on checkout - only adds attributes
         if (Configuration::get('PROSEOMASTER_ENABLE_IMAGE_DIMENSIONS')) {
             $html = $performance->addImageDimensions($html);
         }
 
         // 3. Defer non-critical JavaScript
-        if (Configuration::get('PROSEOMASTER_ENABLE_DEFER_JS')) {
+        // DISABLED on checkout/payment pages to protect payment scripts
+        if (Configuration::get('PROSEOMASTER_ENABLE_DEFER_JS') && !$isCheckoutPage) {
             $html = $performance->deferJavaScript($html);
         }
 
         // 4. Optimize iframes (lazy load, add dimensions)
-        if (Configuration::get('PROSEOMASTER_ENABLE_IFRAME_OPTIMIZATION')) {
+        // DISABLED on checkout - could affect payment iframes (Stripe, PayPal, etc.)
+        if (Configuration::get('PROSEOMASTER_ENABLE_IFRAME_OPTIMIZATION') && !$isCheckoutPage) {
             $html = $performance->optimizeIframes($html);
         }
 
         // 5. Add fetchpriority to LCP candidates
+        // SAFE on checkout
         if (Configuration::get('PROSEOMASTER_ENABLE_LAZY_LOADING')) {
             $html = $performance->addFetchPriority($html);
         }
 
         // 6. Optimize font loading (non-blocking Google Fonts)
+        // SAFE on checkout
         if (Configuration::get('PROSEOMASTER_ENABLE_FONT_OPTIMIZATION')) {
             $html = $performance->inlinePreloadFonts($html);
         }
 
         // 7. Add inline performance script (before </body>)
-        if (Configuration::get('PROSEOMASTER_ENABLE_RESOURCE_HINTS')) {
+        // DISABLED on checkout to avoid any interference
+        if (Configuration::get('PROSEOMASTER_ENABLE_RESOURCE_HINTS') && !$isCheckoutPage) {
             $performanceScript = $performance->getPerformanceScript();
             $html = str_replace('</body>', $performanceScript . "\n</body>", $html);
         }
@@ -2075,8 +2104,66 @@ class ProSEOMaster extends Module
     }
 
     /**
+     * Check if current page is checkout, payment, or order related
+     * These pages need maximum JavaScript compatibility for payment processing
+     * @return bool
+     */
+    protected function isCheckoutOrPaymentPage()
+    {
+        $controller = $this->context->controller;
+        $pageName = $controller->getPageName();
+
+        // List of checkout/payment related pages
+        $checkoutPages = array(
+            'cart',
+            'order',
+            'order-opc',
+            'order-confirmation',
+            'checkout',
+            'payment',
+            'module-paypal',
+            'module-stripe',
+            'module-mollie',
+            'module-adyen',
+            'module-braintree',
+            'module-klarna',
+            'supercheckout',
+            'onepagecheckout',
+            'onepagecheckoutps',
+            'thecheckout',
+            'steasycheckout',
+        );
+
+        // Check page name
+        if (in_array($pageName, $checkoutPages)) {
+            return true;
+        }
+
+        // Check if page name contains payment/checkout keywords
+        if (preg_match('/(checkout|payment|pay|order|cart)/i', $pageName)) {
+            return true;
+        }
+
+        // Check URL for payment module routes
+        $requestUri = isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '';
+        if (preg_match('/(checkout|payment|pay|order|cart|module.*pay)/i', $requestUri)) {
+            return true;
+        }
+
+        // Check if it's a payment module controller
+        if ($controller instanceof ModuleFrontController) {
+            $moduleName = $controller->module->name ?? '';
+            if (preg_match('/(pay|checkout|stripe|paypal|mollie|adyen|braintree|klarna)/i', $moduleName)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Hook: moduleRoutes
-     * Add custom routes for sitemap access
+     * Add custom routes for sitemap and llms.txt access
      * @return array
      */
     public function hookModuleRoutes()
@@ -2089,6 +2176,27 @@ class ProSEOMaster extends Module
                 'params' => array(
                     'fc' => 'module',
                     'module' => 'proseomaster',
+                ),
+            ),
+            // LLMs.txt for AI crawlers
+            'module-proseomaster-llms' => array(
+                'controller' => 'llms',
+                'rule' => 'llms.txt',
+                'keywords' => array(),
+                'params' => array(
+                    'fc' => 'module',
+                    'module' => 'proseomaster',
+                    'type' => 'basic',
+                ),
+            ),
+            'module-proseomaster-llms-full' => array(
+                'controller' => 'llms',
+                'rule' => 'llms-full.txt',
+                'keywords' => array(),
+                'params' => array(
+                    'fc' => 'module',
+                    'module' => 'proseomaster',
+                    'type' => 'full',
                 ),
             ),
         );
@@ -2353,6 +2461,78 @@ class ProSEOMaster extends Module
                             'type' => 'html',
                             'name' => 'htaccess_info',
                             'html_content' => '<div class="alert alert-warning"><i class="icon-warning-sign"></i> <strong>' . $this->l('Server-Side Optimization:') . '</strong> ' . $this->l('Click "Generate .htaccess Rules" in the dashboard above to enable GZIP compression, browser caching, and other server-level optimizations. This is critical for TTFB improvement.') . '</div>',
+                        ),
+                    ),
+                    'submit' => array(
+                        'title' => $this->l('Save'),
+                    ),
+                ),
+            ),
+            // AI SEO Optimization
+            array(
+                'form' => array(
+                    'legend' => array(
+                        'title' => $this->l('AI SEO Optimization (Google AI Mode, GPT, Claude)'),
+                        'icon' => 'icon-magic',
+                    ),
+                    'description' => $this->l('Optimize your site for AI-powered search engines and assistants: Google AI Overviews, ChatGPT, Claude, Bing Copilot, Perplexity, and other LLMs. This helps your content appear in AI-generated answers and recommendations.'),
+                    'input' => array(
+                        array(
+                            'type' => 'html',
+                            'name' => 'ai_info',
+                            'html_content' => '<div class="alert alert-info"><strong>' . $this->l('AI Search is the Future:') . '</strong><br>
+                                <ul style="margin:10px 0 0 20px;">
+                                    <li><strong>Google AI Mode:</strong> ' . $this->l('AI-powered search results with citations') . '</li>
+                                    <li><strong>ChatGPT/GPT:</strong> ' . $this->l('OpenAI\'s conversational search') . '</li>
+                                    <li><strong>Claude:</strong> ' . $this->l('Anthropic\'s AI assistant') . '</li>
+                                    <li><strong>Perplexity:</strong> ' . $this->l('AI-native search engine') . '</li>
+                                    <li><strong>Bing Copilot:</strong> ' . $this->l('Microsoft\'s AI-powered search') . '</li>
+                                </ul>
+                            </div>',
+                        ),
+                        array(
+                            'type' => 'switch',
+                            'label' => $this->l('Enable AI SEO'),
+                            'name' => 'PROSEOMASTER_ENABLE_AI_SEO',
+                            'desc' => $this->l('Master switch for all AI optimization features.'),
+                            'is_bool' => true,
+                            'values' => array(
+                                array('id' => 'active_on', 'value' => 1, 'label' => $this->l('Yes')),
+                                array('id' => 'active_off', 'value' => 0, 'label' => $this->l('No')),
+                            ),
+                        ),
+                        array(
+                            'type' => 'switch',
+                            'label' => $this->l('Enable llms.txt'),
+                            'name' => 'PROSEOMASTER_ENABLE_LLMS_TXT',
+                            'desc' => $this->l('Generate llms.txt file (like robots.txt but for AI). Provides structured information about your store for AI crawlers. Access at: /llms.txt and /llms-full.txt'),
+                            'is_bool' => true,
+                            'values' => array(
+                                array('id' => 'active_on', 'value' => 1, 'label' => $this->l('Yes')),
+                                array('id' => 'active_off', 'value' => 0, 'label' => $this->l('No')),
+                            ),
+                        ),
+                        array(
+                            'type' => 'switch',
+                            'label' => $this->l('Enable AI Meta Tags'),
+                            'name' => 'PROSEOMASTER_ENABLE_AI_META_TAGS',
+                            'desc' => $this->l('Add meta tags that help AI systems understand and cite your content correctly.'),
+                            'is_bool' => true,
+                            'values' => array(
+                                array('id' => 'active_on', 'value' => 1, 'label' => $this->l('Yes')),
+                                array('id' => 'active_off', 'value' => 0, 'label' => $this->l('No')),
+                            ),
+                        ),
+                        array(
+                            'type' => 'html',
+                            'name' => 'ai_links',
+                            'html_content' => '<div class="alert alert-success"><i class="icon-check"></i> <strong>' . $this->l('AI Files Available:') . '</strong><br>
+                                <ul style="margin:10px 0 0 20px;">
+                                    <li><a href="' . $this->context->link->getPageLink('index', true) . 'llms.txt" target="_blank">/llms.txt</a> - ' . $this->l('Basic store information for AI') . '</li>
+                                    <li><a href="' . $this->context->link->getPageLink('index', true) . 'llms-full.txt" target="_blank">/llms-full.txt</a> - ' . $this->l('Complete product catalog for AI') . '</li>
+                                </ul>
+                                <p style="margin-top:10px;">' . $this->l('These files help AI systems like ChatGPT and Google AI understand your store and recommend your products.') . '</p>
+                            </div>',
                         ),
                     ),
                     'submit' => array(
