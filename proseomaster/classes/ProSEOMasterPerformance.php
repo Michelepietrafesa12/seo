@@ -105,32 +105,14 @@ class ProSEOMasterPerformance
 
     /**
      * Generate CSS preloads to eliminate render-blocking CSS
+     * DISABLED: Can cause FOUC (Flash of Unstyled Content) and break theme design
      * @return string
      */
     protected function generateCssPreloads()
     {
-        $output = '<!-- ProSEO Master: CSS Preloads -->' . "\n";
-
-        // Detect theme CSS files
-        $themeCssPath = _PS_THEME_DIR_ . 'assets/css/';
-        $cssFiles = array();
-
-        // Common theme CSS files to preload
-        $criticalCssFiles = array(
-            'theme.css',
-            'custom.css',
-            'style.css',
-        );
-
-        foreach ($criticalCssFiles as $cssFile) {
-            if (file_exists($themeCssPath . $cssFile)) {
-                $cssUrl = _THEME_CSS_DIR_ . $cssFile . '?v=' . filemtime($themeCssPath . $cssFile);
-                $output .= '<link rel="preload" href="' . $cssUrl . '" as="style" onload="this.onload=null;this.rel=\'stylesheet\'">' . "\n";
-                $output .= '<noscript><link rel="stylesheet" href="' . $cssUrl . '"></noscript>' . "\n";
-            }
-        }
-
-        return $output;
+        // DISABLED - This technique can break theme styling
+        // Keep preconnect/dns-prefetch only which are safe
+        return '';
     }
 
     /**
@@ -267,205 +249,55 @@ class ProSEOMasterPerformance
 
     /**
      * Generate font optimization CSS
+     * SAFE VERSION: No !important, no visual overrides
      * @return string
      */
     public function generateFontOptimization()
     {
-        $output = '<!-- ProSEO Master: Font Optimization -->' . "\n";
-
-        // font-display: swap for all @font-face
-        $output .= '<style>';
-        $output .= '@font-face{font-display:swap!important}';
-
-        // Optimize Google Fonts with font-display
-        $output .= '.wf-loading *{opacity:1!important}';
-
-        // Reduce CLS from font loading
-        $output .= 'body{font-synthesis:none;text-rendering:optimizeLegibility;-webkit-font-smoothing:antialiased}';
-
-        $output .= '</style>' . "\n";
-
-        return $output;
+        // DISABLED - font-display:swap with !important can break theme fonts
+        // The theme should handle its own font-display settings
+        return '';
     }
 
     /**
      * Generate performance meta tags
+     * SAFE VERSION: Only non-visual hints
      * @return string
      */
     public function generatePerformanceMetaTags()
     {
-        $output = '<!-- ProSEO Master: Performance Meta -->' . "\n";
-
-        // Enable back-forward cache
-        $output .= '<meta http-equiv="Cache-Control" content="public, max-age=31536000">' . "\n";
-
-        // Color scheme hint (reduces CLS from dark mode)
-        $output .= '<meta name="color-scheme" content="light">' . "\n";
-
-        // Viewport with minimum scale (prevents zoom CLS)
-        $output .= '<meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1">' . "\n";
-
-        return $output;
+        // DISABLED - These can conflict with theme meta tags
+        // Viewport especially should not be duplicated
+        return '';
     }
 
     /**
      * Generate Critical CSS inline
+     * MINIMAL VERSION: Only CLS prevention, no visual styles
+     * This prevents layout shifts without overriding theme colors/fonts
      * @param string $pageType
      * @return string
      */
     public function getCriticalCss($pageType)
     {
-        $css = '<!-- ProSEO Master: Critical CSS -->' . "\n";
-        $css .= '<style id="critical-css">';
+        $css = '<!-- ProSEO Master: Anti-CLS CSS -->' . "\n";
+        $css .= '<style id="proseo-cls-prevention">';
 
-        // Base critical CSS (above-the-fold essential styles)
+        // MINIMAL CSS - Only dimensions and aspect-ratios to prevent CLS
+        // NO colors, fonts, backgrounds, borders, padding - those come from theme
         $baseCss = '
-            /* Reset & Base */
-            *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-            html{-webkit-text-size-adjust:100%;line-height:1.15;scroll-behavior:smooth}
-            body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;font-size:1rem;line-height:1.5;color:#212529;background:#fff;-webkit-font-smoothing:antialiased}
-
-            /* Prevent CLS - Reserve space for elements */
-            img,video,iframe{max-width:100%;height:auto;display:block}
-            img:not([src]){visibility:hidden}
+            /* CLS Prevention Only - No Visual Overrides */
+            img,video,iframe{max-width:100%;height:auto}
             img[loading="lazy"]{content-visibility:auto}
 
-            /* Header skeleton */
-            .header-top,#header{min-height:40px}
-            .header-nav{min-height:50px}
-            header,#header{position:relative;z-index:1000}
-
-            /* Logo placeholder */
-            .logo,.header-logo,#_desktop_logo{min-height:50px;min-width:150px}
-            .logo img,.header-logo img{max-height:60px;width:auto}
-
-            /* Navigation skeleton */
-            nav,#_desktop_top_menu,.top-menu{min-height:45px}
-
-            /* Container */
-            .container{max-width:1200px;margin:0 auto;padding:0 15px;width:100%}
-            .row{display:flex;flex-wrap:wrap;margin:0 -15px}
-            .col,.col-md-6,.col-lg-4{padding:0 15px}
-
-            /* Buttons base */
-            .btn,button{display:inline-block;font-weight:400;text-align:center;vertical-align:middle;cursor:pointer;border:1px solid transparent;padding:.375rem .75rem;font-size:1rem;line-height:1.5;border-radius:.25rem;transition:color .15s,background .15s,border-color .15s}
-
-            /* Forms base */
-            input,select,textarea{font-family:inherit;font-size:inherit;line-height:inherit}
-            input[type="search"],input[type="text"],input[type="email"]{width:100%;padding:.5rem;border:1px solid #ced4da;border-radius:.25rem}
-
-            /* Links */
-            a{color:#007bff;text-decoration:none;background:transparent}
-            a:hover{color:#0056b3;text-decoration:underline}
-
-            /* Lists */
-            ul,ol{list-style:none}
-
-            /* Utility */
-            .clearfix::after{content:"";display:table;clear:both}
-            .hidden,.d-none{display:none!important}
-            .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0}
+            /* Reserve space for common elements */
+            .product-thumbnail,.thumbnail-container,.product-cover{aspect-ratio:1/1}
+            .carousel,.slider,.banner{min-height:200px}
+            .logo img{min-height:30px}
         ';
 
         $css .= $this->minifyCss($baseCss);
-
-        // Page-specific critical CSS
-        switch ($pageType) {
-            case 'index':
-                $css .= $this->minifyCss('
-                    /* Homepage hero/slider */
-                    .carousel,.slider,.banner{position:relative;overflow:hidden;min-height:300px}
-                    .carousel-inner,.slider-inner{position:relative;width:100%;overflow:hidden}
-                    .carousel-item{display:none;width:100%}
-                    .carousel-item.active{display:block}
-                    .carousel-item img{width:100%;height:auto;object-fit:cover}
-
-                    /* Featured products grid */
-                    .featured-products,.products{padding:2rem 0}
-                    .products-grid,.product-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:20px}
-
-                    /* Product card skeleton */
-                    .product-miniature,.product-item{background:#fff;border-radius:4px;overflow:hidden;min-height:350px}
-                    .product-thumbnail,.product-image{aspect-ratio:1/1;overflow:hidden;background:#f8f9fa}
-                    .product-thumbnail img{width:100%;height:100%;object-fit:contain}
-                ');
-                break;
-
-            case 'category':
-                $css .= $this->minifyCss('
-                    /* Category layout */
-                    #products,.products-section{padding:1rem 0}
-                    .products-grid,.product-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:20px}
-
-                    /* Product card */
-                    .product-miniature{background:#fff;padding:10px;border-radius:4px;min-height:350px}
-                    .thumbnail-container{aspect-ratio:1/1;overflow:hidden;margin-bottom:10px;background:#f8f9fa}
-                    .thumbnail-container img{width:100%;height:100%;object-fit:contain}
-
-                    /* Product info skeleton */
-                    .product-title{font-size:.9rem;line-height:1.3;min-height:2.6em;overflow:hidden}
-                    .product-price-and-shipping{min-height:25px}
-                    .price{font-weight:700;font-size:1.1rem}
-
-                    /* Sidebar/Filters */
-                    #left-column,.sidebar{width:250px;min-height:200px}
-                    .facet-title{padding:10px 0;font-weight:600}
-
-                    /* Pagination */
-                    .pagination{display:flex;justify-content:center;padding:20px 0;min-height:50px}
-                ');
-                break;
-
-            case 'product':
-                $css .= $this->minifyCss('
-                    /* Product page layout */
-                    #content-wrapper,.product-container{padding:20px 0}
-                    .product-leftside,.product-images{width:50%}
-                    .product-rightside,.product-info{width:50%;padding-left:30px}
-
-                    /* Product images */
-                    .product-cover{position:relative;overflow:hidden;aspect-ratio:1/1;background:#f8f9fa}
-                    .product-cover img{width:100%;height:100%;object-fit:contain}
-                    .product-images-thumbs,.js-qv-product-images{display:flex;gap:10px;margin-top:10px}
-                    .product-images-thumbs img{width:80px;height:80px;object-fit:contain;cursor:pointer}
-
-                    /* Product info */
-                    h1.product-title,.h1{font-size:1.5rem;font-weight:700;margin-bottom:15px;min-height:1.5em}
-                    .product-prices{margin-bottom:20px;min-height:40px}
-                    .current-price,.product-price{font-size:1.5rem;font-weight:700}
-                    .product-description-short{margin-bottom:20px;min-height:60px}
-
-                    /* Add to cart */
-                    .product-add-to-cart,.add-to-cart{margin:20px 0}
-                    .add-to-cart .btn{padding:15px 30px;font-size:1.1rem;min-width:200px}
-                    .product-quantity{display:flex;align-items:center;margin-bottom:15px}
-                    .qty input{width:60px;text-align:center;padding:10px;border:1px solid #ddd}
-
-                    @media(max-width:768px){
-                        .product-leftside,.product-rightside,.product-images,.product-info{width:100%;padding:0}
-                        .product-rightside,.product-info{margin-top:20px}
-                    }
-                ');
-                break;
-
-            case 'cart':
-                $css .= $this->minifyCss('
-                    .cart-grid{display:grid;grid-template-columns:1fr 350px;gap:30px}
-                    .cart-items{min-height:200px}
-                    .cart-item{display:flex;padding:20px 0;border-bottom:1px solid #eee}
-                    .cart-item-img{width:100px;margin-right:20px}
-                    .cart-summary{background:#f8f9fa;padding:20px;border-radius:4px;min-height:300px}
-                    @media(max-width:768px){.cart-grid{grid-template-columns:1fr}}
-                ');
-                break;
-        }
-
         $css .= '</style>' . "\n";
-
-        // Add script to remove critical CSS after main CSS loads
-        $css .= '<script>';
-        $css .= 'window.addEventListener("load",function(){var c=document.getElementById("critical-css");if(c){setTimeout(function(){c.remove()},100)}});';
-        $css .= '</script>' . "\n";
 
         return $css;
     }

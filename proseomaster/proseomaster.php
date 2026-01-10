@@ -5,7 +5,7 @@
  * @author      SEO Expert
  * @copyright   2024
  * @license     MIT
- * @version     2.3.0
+ * @version     2.3.1
  */
 
 if (!defined('_PS_VERSION_')) {
@@ -90,7 +90,7 @@ class ProSEOMaster extends Module
     {
         $this->name = 'proseomaster';
         $this->tab = 'seo';
-        $this->version = '2.3.0';
+        $this->version = '2.3.1';
         $this->author = 'SEO Expert';
         $this->need_instance = 0;
         $this->bootstrap = true;
@@ -139,10 +139,10 @@ class ProSEOMaster extends Module
             'PROSEOMASTER_NOINDEX_DEEP_PAGINATION' => 1,
             'PROSEOMASTER_ENABLE_LAZY_LOADING' => 1,
             'PROSEOMASTER_ENABLE_RESOURCE_HINTS' => 1,
-            'PROSEOMASTER_ENABLE_CRITICAL_CSS' => 1,
-            'PROSEOMASTER_ENABLE_DEFER_JS' => 1,
+            'PROSEOMASTER_ENABLE_CRITICAL_CSS' => 0, // OFF default - can break theme
+            'PROSEOMASTER_ENABLE_DEFER_JS' => 0, // OFF default - can break JS
             'PROSEOMASTER_ENABLE_IMAGE_DIMENSIONS' => 1,
-            'PROSEOMASTER_ENABLE_FONT_OPTIMIZATION' => 1,
+            'PROSEOMASTER_ENABLE_FONT_OPTIMIZATION' => 0, // OFF default - can break fonts
             'PROSEOMASTER_ENABLE_IFRAME_OPTIMIZATION' => 1,
             'PROSEOMASTER_AUTO_GENERATE_SITEMAP' => 0,
             // AI Optimization defaults
