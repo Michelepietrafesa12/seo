@@ -576,4 +576,304 @@ class ProSEOMasterAudit
             return '#dd4b39'; // Red
         }
     }
+
+    /**
+     * Analyze internal linking structure
+     * @return array
+     */
+    public function analyzeInternalLinking()
+    {
+        $results = array(
+            'orphan_products' => array(),
+            'orphan_categories' => array(),
+            'low_link_products' => array(),
+            'top_linked_products' => array(),
+            'suggestions' => array(),
+            'stats' => array(
+                'total_products' => 0,
+                'orphan_count' => 0,
+                'low_link_count' => 0,
+                'avg_internal_links' => 0,
+            ),
+        );
+
+        $idLang = (int) $this->context->language->id;
+        $idShop = (int) $this->context->shop->id;
+
+        // Get all products
+        $products = Db::getInstance()->executeS(
+            'SELECT p.id_product, pl.name, pl.link_rewrite, p.id_category_default
+             FROM ' . _DB_PREFIX_ . 'product p
+             INNER JOIN ' . _DB_PREFIX_ . 'product_lang pl ON p.id_product = pl.id_product AND pl.id_lang = ' . $idLang . ' AND pl.id_shop = ' . $idShop . '
+             INNER JOIN ' . _DB_PREFIX_ . 'product_shop ps ON p.id_product = ps.id_product AND ps.id_shop = ' . $idShop . '
+             WHERE ps.active = 1'
+        );
+
+        $results['stats']['total_products'] = count($products);
+
+        // Count internal links for each product
+        $linkCounts = array();
+        foreach ($products as $product) {
+            $linkCount = $this->countInternalLinksToProduct($product['id_product'], $idLang, $idShop);
+            $linkCounts[$product['id_product']] = $linkCount;
+
+            if ($linkCount === 0) {
+                // Orphan product - no internal links pointing to it
+                $results['orphan_products'][] = array(
+                    'id' => $product['id_product'],
+                    'name' => $product['name'],
+                    'category' => $product['id_category_default'],
+                );
+                $results['stats']['orphan_count']++;
+            } elseif ($linkCount < 3) {
+                // Low link count
+                $results['low_link_products'][] = array(
+                    'id' => $product['id_product'],
+                    'name' => $product['name'],
+                    'link_count' => $linkCount,
+                );
+                $results['stats']['low_link_count']++;
+            }
+        }
+
+        // Calculate average
+        if (count($linkCounts) > 0) {
+            $results['stats']['avg_internal_links'] = round(array_sum($linkCounts) / count($linkCounts), 1);
+        }
+
+        // Get top linked products
+        arsort($linkCounts);
+        $topLinked = array_slice($linkCounts, 0, 10, true);
+        foreach ($topLinked as $productId => $count) {
+            $productData = array_filter($products, function ($p) use ($productId) {
+                return $p['id_product'] == $productId;
+            });
+            $productData = reset($productData);
+            if ($productData) {
+                $results['top_linked_products'][] = array(
+                    'id' => $productId,
+                    'name' => $productData['name'],
+                    'link_count' => $count,
+                );
+            }
+        }
+
+        // Analyze categories
+        $results['orphan_categories'] = $this->findOrphanCategories($idLang, $idShop);
+
+        // Generate suggestions
+        $results['suggestions'] = $this->generateLinkingSuggestions($results);
+
+        return $results;
+    }
+
+    /**
+     * Count internal links pointing to a product
+     * @param int $idProduct
+     * @param int $idLang
+     * @param int $idShop
+     * @return int
+     */
+    protected function countInternalLinksToProduct($idProduct, $idLang, $idShop)
+    {
+        $count = 0;
+
+        // Check product URL patterns that might be linked
+        $product = new Product($idProduct, false, $idLang);
+        $productUrl = $this->context->link->getProductLink($idProduct, $product->link_rewrite, null, null, $idLang);
+        $urlPath = parse_url($productUrl, PHP_URL_PATH);
+
+        // Count links in other product descriptions
+        $linkPattern = '%' . pSQL($urlPath) . '%';
+
+        $count += (int) Db::getInstance()->getValue(
+            'SELECT COUNT(*) FROM ' . _DB_PREFIX_ . 'product_lang
+             WHERE id_lang = ' . $idLang . '
+             AND id_shop = ' . $idShop . '
+             AND id_product != ' . $idProduct . '
+             AND (description LIKE "' . $linkPattern . '" OR description_short LIKE "' . $linkPattern . '")'
+        );
+
+        // Count links in CMS pages
+        $count += (int) Db::getInstance()->getValue(
+            'SELECT COUNT(*) FROM ' . _DB_PREFIX_ . 'cms_lang
+             WHERE id_lang = ' . $idLang . '
+             AND id_shop = ' . $idShop . '
+             AND content LIKE "' . $linkPattern . '"'
+        );
+
+        // Count links in category descriptions
+        $count += (int) Db::getInstance()->getValue(
+            'SELECT COUNT(*) FROM ' . _DB_PREFIX_ . 'category_lang
+             WHERE id_lang = ' . $idLang . '
+             AND id_shop = ' . $idShop . '
+             AND description LIKE "' . $linkPattern . '"'
+        );
+
+        // Count "related products" links (accessories)
+        $count += (int) Db::getInstance()->getValue(
+            'SELECT COUNT(*) FROM ' . _DB_PREFIX_ . 'accessory
+             WHERE id_product_2 = ' . $idProduct
+        );
+
+        // Count cross-sell links if module exists
+        if (Db::getInstance()->executeS("SHOW TABLES LIKE '" . _DB_PREFIX_ . "crossselling'")) {
+            $count += (int) Db::getInstance()->getValue(
+                'SELECT COUNT(*) FROM ' . _DB_PREFIX_ . 'crossselling
+                 WHERE id_product_2 = ' . $idProduct
+            );
+        }
+
+        return $count;
+    }
+
+    /**
+     * Find categories with no products
+     * @param int $idLang
+     * @param int $idShop
+     * @return array
+     */
+    protected function findOrphanCategories($idLang, $idShop)
+    {
+        $orphans = array();
+
+        $categories = Db::getInstance()->executeS(
+            'SELECT c.id_category, cl.name, c.level_depth
+             FROM ' . _DB_PREFIX_ . 'category c
+             INNER JOIN ' . _DB_PREFIX_ . 'category_lang cl ON c.id_category = cl.id_category AND cl.id_lang = ' . $idLang . ' AND cl.id_shop = ' . $idShop . '
+             INNER JOIN ' . _DB_PREFIX_ . 'category_shop cs ON c.id_category = cs.id_category AND cs.id_shop = ' . $idShop . '
+             LEFT JOIN ' . _DB_PREFIX_ . 'category_product cp ON c.id_category = cp.id_category
+             WHERE c.active = 1
+             AND c.id_category > 2
+             GROUP BY c.id_category
+             HAVING COUNT(cp.id_product) = 0'
+        );
+
+        foreach ($categories as $cat) {
+            $orphans[] = array(
+                'id' => $cat['id_category'],
+                'name' => $cat['name'],
+                'depth' => $cat['level_depth'],
+            );
+        }
+
+        return $orphans;
+    }
+
+    /**
+     * Generate linking suggestions based on analysis
+     * @param array $results
+     * @return array
+     */
+    protected function generateLinkingSuggestions($results)
+    {
+        $suggestions = array();
+
+        // Suggestion for orphan products
+        if (count($results['orphan_products']) > 0) {
+            $suggestions[] = array(
+                'priority' => 'high',
+                'title' => 'Prodotti orfani rilevati',
+                'description' => sprintf(
+                    '%d prodotti non hanno link interni che puntano ad essi. Google potrebbe avere difficoltà a scoprirli.',
+                    count($results['orphan_products'])
+                ),
+                'action' => 'Aggiungi link nelle descrizioni di categorie correlate o crea sezioni "Prodotti correlati".',
+            );
+        }
+
+        // Suggestion for low link products
+        if (count($results['low_link_products']) > 0) {
+            $suggestions[] = array(
+                'priority' => 'medium',
+                'title' => 'Prodotti con pochi link interni',
+                'description' => sprintf(
+                    '%d prodotti hanno meno di 3 link interni. Un buon linking interno migliora il crawling e la distribuzione del PageRank.',
+                    count($results['low_link_products'])
+                ),
+                'action' => 'Usa i "Prodotti accessori" di PrestaShop e link nelle descrizioni.',
+            );
+        }
+
+        // Suggestion for orphan categories
+        if (count($results['orphan_categories']) > 0) {
+            $suggestions[] = array(
+                'priority' => 'medium',
+                'title' => 'Categorie vuote',
+                'description' => sprintf(
+                    '%d categorie non contengono prodotti. Questo può confondere i visitatori e sprecare crawl budget.',
+                    count($results['orphan_categories'])
+                ),
+                'action' => 'Aggiungi prodotti a queste categorie o rimuovile/nascondile.',
+            );
+        }
+
+        // Suggestion based on average
+        if ($results['stats']['avg_internal_links'] < 2) {
+            $suggestions[] = array(
+                'priority' => 'high',
+                'title' => 'Linking interno insufficiente',
+                'description' => sprintf(
+                    'La media di link interni per prodotto è %.1f. Un buon obiettivo è almeno 3-5 link per pagina.',
+                    $results['stats']['avg_internal_links']
+                ),
+                'action' => 'Implementa una strategia di linking: usa breadcrumb, prodotti correlati, cross-sell e link contestuali.',
+            );
+        }
+
+        // Positive feedback if good
+        if (count($suggestions) === 0) {
+            $suggestions[] = array(
+                'priority' => 'info',
+                'title' => 'Buona struttura di linking',
+                'description' => 'La struttura del linking interno appare ben organizzata.',
+                'action' => 'Continua a monitorare e aggiungere link contestuali nelle nuove descrizioni.',
+            );
+        }
+
+        return $suggestions;
+    }
+
+    /**
+     * Get anchor text suggestions for a product
+     * @param int $idProduct
+     * @param int $idLang
+     * @return array
+     */
+    public function getAnchorTextSuggestions($idProduct, $idLang)
+    {
+        $suggestions = array();
+
+        $product = new Product($idProduct, false, $idLang);
+
+        // Main suggestion: product name
+        $suggestions[] = $product->name;
+
+        // Category + product name
+        if ($product->id_category_default) {
+            $category = new Category($product->id_category_default, $idLang);
+            if (Validate::isLoadedObject($category)) {
+                $suggestions[] = $category->name . ' ' . $product->name;
+            }
+        }
+
+        // Manufacturer + product name
+        if ($product->id_manufacturer) {
+            $manufacturer = new Manufacturer($product->id_manufacturer, $idLang);
+            if (Validate::isLoadedObject($manufacturer)) {
+                $suggestions[] = $manufacturer->name . ' ' . $product->name;
+            }
+        }
+
+        // Reference if available
+        if (!empty($product->reference)) {
+            $suggestions[] = $product->reference;
+        }
+
+        // Action-based anchor
+        $suggestions[] = 'Scopri ' . $product->name;
+        $suggestions[] = 'Acquista ' . $product->name;
+
+        return array_unique($suggestions);
+    }
 }

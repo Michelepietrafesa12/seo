@@ -21,6 +21,10 @@ require_once dirname(__FILE__) . '/classes/ProSEOMasterSchemaAdvanced.php';
 require_once dirname(__FILE__) . '/classes/ProSEOMasterPerformance.php';
 require_once dirname(__FILE__) . '/classes/ProSEOMasterAudit.php';
 require_once dirname(__FILE__) . '/classes/ProSEOMasterAI.php';
+require_once dirname(__FILE__) . '/classes/ProSEOMasterRedirects.php';
+require_once dirname(__FILE__) . '/classes/ProSEOMasterLinkChecker.php';
+require_once dirname(__FILE__) . '/classes/ProSEOMasterSchemaValidator.php';
+require_once dirname(__FILE__) . '/classes/ProSEOMasterBulkEditor.php';
 
 class ProSEOMaster extends Module
 {
@@ -92,7 +96,7 @@ class ProSEOMaster extends Module
     {
         $this->name = 'proseomaster';
         $this->tab = 'seo';
-        $this->version = '2.4.0';
+        $this->version = '2.5.0';
         $this->author = 'SEO Expert';
         $this->need_instance = 0;
         $this->bootstrap = true;
@@ -159,12 +163,21 @@ class ProSEOMaster extends Module
             Configuration::updateValue($key, $value);
         }
 
+        // Install redirects table
+        $redirects = new ProSEOMasterRedirects();
+        if (!$redirects->install()) {
+            return false;
+        }
+
         return parent::install() &&
             $this->registerHook('displayHeader') &&
             $this->registerHook('displayAfterBodyOpeningTag') &&
             $this->registerHook('actionFrontControllerSetMedia') &&
             $this->registerHook('actionOutputHTMLBefore') &&
             $this->registerHook('moduleRoutes') &&
+            $this->registerHook('actionProductDelete') &&
+            $this->registerHook('actionCategoryDelete') &&
+            $this->registerHook('actionDispatcher') &&
             $this->installTab();
     }
 
@@ -177,6 +190,10 @@ class ProSEOMaster extends Module
         foreach ($this->configFields as $field) {
             Configuration::deleteByName($field);
         }
+
+        // Uninstall redirects table
+        $redirects = new ProSEOMasterRedirects();
+        $redirects->uninstall();
 
         return parent::uninstall() && $this->uninstallTab();
     }
@@ -222,47 +239,7 @@ class ProSEOMaster extends Module
         return bin2hex(random_bytes(16));
     }
 
-    /**
-     * Module configuration page
-     * @return string
-     */
-    public function getContent()
-    {
-        $output = '';
-
-        // Handle form submissions
-        if (Tools::isSubmit('submitProSEOMasterConfig')) {
-            $output .= $this->postProcess();
-        }
-
-        // Handle sitemap generation
-        if (Tools::isSubmit('generateSitemap')) {
-            $output .= $this->generateSitemapAction();
-        }
-
-        // Handle robots.txt generation
-        if (Tools::isSubmit('generateRobots')) {
-            $output .= $this->generateRobotsAction();
-        }
-
-        // Handle SEO audit
-        if (Tools::isSubmit('runSeoAudit')) {
-            $output .= $this->runSeoAuditAction();
-        }
-
-        // Handle .htaccess generation
-        if (Tools::isSubmit('generateHtaccess')) {
-            $output .= $this->generateHtaccessAction();
-        }
-
-        // Handle cron token regeneration
-        if (Tools::isSubmit('regenerateCronToken')) {
-            $output .= $this->regenerateCronTokenAction();
-        }
-
-        // Render dashboard + forms
-        return $output . $this->renderDashboard() . $this->renderForm() . $this->renderAdvancedForm();
-    }
+    // getContent method moved to end of file to include redirect manager
 
     /**
      * Regenerate cron token action
@@ -1333,6 +1310,7 @@ class ProSEOMaster extends Module
 
     /**
      * Generate hreflang tags for multilingual sites
+     * Supports language-country codes (it-IT, en-GB) for better targeting
      * @return string
      */
     protected function generateHreflangTags()
@@ -1348,15 +1326,41 @@ class ProSEOMaster extends Module
         $controller = $this->context->controller;
         $page = $controller->getPageName();
 
+        // Get default country for language-country format
+        $defaultCountry = Configuration::get('PS_COUNTRY_DEFAULT');
+        $country = new Country($defaultCountry, $this->context->language->id);
+        $countryIso = strtoupper($country->iso_code);
+
+        $addedLangs = array();
+
         foreach ($languages as $lang) {
-            $hreflang = $lang['language_code'];
             $url = $this->getAlternateUrl($lang['id_lang'], $page);
-            if ($url) {
-                $output .= '<link rel="alternate" hreflang="' . $hreflang . '" href="' . htmlspecialchars($url, ENT_QUOTES, 'UTF-8') . '" />' . "\n";
+            if (!$url) {
+                continue;
+            }
+
+            // Get proper hreflang code
+            $hreflang = $this->getHreflangCode($lang, $countryIso);
+
+            // Avoid duplicates
+            if (in_array($hreflang, $addedLangs)) {
+                continue;
+            }
+            $addedLangs[] = $hreflang;
+
+            $output .= '<link rel="alternate" hreflang="' . $hreflang . '" href="' . htmlspecialchars($url, ENT_QUOTES, 'UTF-8') . '" />' . "\n";
+
+            // If we have language_code like "it", also add country-specific "it-IT" if different
+            $langOnly = substr($lang['language_code'], 0, 2);
+            $langCountry = strtolower($langOnly) . '-' . strtoupper($langOnly);
+
+            if ($hreflang === $langOnly && !in_array($langCountry, $addedLangs)) {
+                $output .= '<link rel="alternate" hreflang="' . $langCountry . '" href="' . htmlspecialchars($url, ENT_QUOTES, 'UTF-8') . '" />' . "\n";
+                $addedLangs[] = $langCountry;
             }
         }
 
-        // Add x-default
+        // Add x-default pointing to default language
         $defaultLang = (int) Configuration::get('PS_LANG_DEFAULT');
         $defaultUrl = $this->getAlternateUrl($defaultLang, $page);
         if ($defaultUrl) {
@@ -1364,6 +1368,25 @@ class ProSEOMaster extends Module
         }
 
         return $output;
+    }
+
+    /**
+     * Get proper hreflang code from language
+     * Handles both simple (it, en) and complex (it-IT, en-GB) formats
+     * @param array $lang
+     * @param string $defaultCountryIso
+     * @return string
+     */
+    protected function getHreflangCode($lang, $defaultCountryIso)
+    {
+        // If language_code already has region (e.g., en-GB, pt-BR)
+        if (strpos($lang['language_code'], '-') !== false) {
+            return strtolower($lang['language_code']);
+        }
+
+        // If language_code is just language (e.g., it, en)
+        // Return as is - Google accepts both formats
+        return strtolower($lang['language_code']);
     }
 
     /**
@@ -2189,26 +2212,69 @@ class ProSEOMaster extends Module
 
     /**
      * Generate Review and AggregateRating schema
+     * Supports multiple review modules: productcomments, yotpo, trustpilot, stamped, etc.
      * @param Product $product
      * @return array
      */
     protected function generateReviewSchema($product)
     {
         $result = array();
-
-        // Check if product comments module is active
-        if (!Module::isEnabled('productcomments')) {
-            return $result;
-        }
-
-        // Get average rating and review count
         $avgRating = null;
         $reviewCount = 0;
+        $reviews = array();
 
-        // Try to get data from productcomments module
-        if (class_exists('ProductComment')) {
+        // Try different review modules in priority order
+
+        // 1. PrestaShop native productcomments
+        if (Module::isEnabled('productcomments') && class_exists('ProductComment')) {
             $avgRating = ProductComment::getAverageGrade($product->id);
             $reviewCount = ProductComment::getCommentNumber($product->id);
+            $reviews = ProductComment::getByProduct($product->id, 1, 10, true);
+        }
+
+        // 2. Yotpo Reviews
+        if ($reviewCount == 0 && Module::isEnabled('yotpo')) {
+            $yotpoData = $this->getYotpoReviews($product->id);
+            if ($yotpoData) {
+                $avgRating = $yotpoData['average_rating'];
+                $reviewCount = $yotpoData['review_count'];
+            }
+        }
+
+        // 3. Trustpilot module
+        if ($reviewCount == 0 && Module::isEnabled('trustpilotreviews')) {
+            $trustpilotData = $this->getTrustpilotReviews($product->id);
+            if ($trustpilotData) {
+                $avgRating = $trustpilotData['average_rating'];
+                $reviewCount = $trustpilotData['review_count'];
+            }
+        }
+
+        // 4. Stamped.io reviews
+        if ($reviewCount == 0 && Module::isEnabled('stampedio')) {
+            $stampedData = $this->getStampedReviews($product->id);
+            if ($stampedData) {
+                $avgRating = $stampedData['average_rating'];
+                $reviewCount = $stampedData['review_count'];
+            }
+        }
+
+        // 5. Judge.me reviews
+        if ($reviewCount == 0 && Module::isEnabled('judgeme')) {
+            $judgemeData = $this->getJudgemeReviews($product->id);
+            if ($judgemeData) {
+                $avgRating = $judgemeData['average_rating'];
+                $reviewCount = $judgemeData['review_count'];
+            }
+        }
+
+        // 6. Generic database check for custom review tables
+        if ($reviewCount == 0) {
+            $genericData = $this->getGenericReviewData($product->id);
+            if ($genericData) {
+                $avgRating = $genericData['average_rating'];
+                $reviewCount = $genericData['review_count'];
+            }
         }
 
         $minReviews = (int) Configuration::get('PROSEOMASTER_MIN_REVIEWS_AGGREGATE');
@@ -2221,35 +2287,187 @@ class ProSEOMaster extends Module
                 'bestRating' => '5',
                 'worstRating' => '1',
                 'reviewCount' => (int) $reviewCount,
+                'ratingCount' => (int) $reviewCount,
             );
         }
 
         // Get individual reviews (limit to 10 for performance)
-        if (class_exists('ProductComment') && $reviewCount > 0) {
-            $reviews = ProductComment::getByProduct($product->id, 1, 10, true);
-            if (!empty($reviews)) {
-                $result['review'] = array();
-                foreach ($reviews as $review) {
-                    $result['review'][] = array(
-                        '@type' => 'Review',
-                        'reviewRating' => array(
-                            '@type' => 'Rating',
-                            'ratingValue' => (int) $review['grade'],
-                            'bestRating' => '5',
-                            'worstRating' => '1',
-                        ),
-                        'author' => array(
-                            '@type' => 'Person',
-                            'name' => $review['customer_name'],
-                        ),
-                        'datePublished' => date('Y-m-d', strtotime($review['date_add'])),
-                        'reviewBody' => $this->cleanText($review['content']),
-                    );
+        if (!empty($reviews)) {
+            $result['review'] = array();
+            foreach ($reviews as $review) {
+                $reviewSchema = array(
+                    '@type' => 'Review',
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'ratingValue' => (int) ($review['grade'] ?? $review['rating'] ?? 5),
+                        'bestRating' => '5',
+                        'worstRating' => '1',
+                    ),
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => $review['customer_name'] ?? $review['author'] ?? 'Customer',
+                    ),
+                    'datePublished' => date('Y-m-d', strtotime($review['date_add'] ?? $review['date'] ?? 'now')),
+                );
+
+                // Add review body if available
+                $reviewBody = $review['content'] ?? $review['body'] ?? $review['text'] ?? '';
+                if (!empty($reviewBody)) {
+                    $reviewSchema['reviewBody'] = $this->cleanText($reviewBody);
                 }
+
+                $result['review'][] = $reviewSchema;
             }
         }
 
         return $result;
+    }
+
+    /**
+     * Get Yotpo reviews data
+     * @param int $idProduct
+     * @return array|null
+     */
+    protected function getYotpoReviews($idProduct)
+    {
+        // Yotpo stores data via API, check if module has cached data
+        if (class_exists('YotpoReviews')) {
+            try {
+                $yotpo = new YotpoReviews();
+                if (method_exists($yotpo, 'getProductReviews')) {
+                    return $yotpo->getProductReviews($idProduct);
+                }
+            } catch (Exception $e) {
+                // Silently fail
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Get Trustpilot reviews data
+     * @param int $idProduct
+     * @return array|null
+     */
+    protected function getTrustpilotReviews($idProduct)
+    {
+        // Check for Trustpilot integration
+        try {
+            $result = Db::getInstance()->getRow(
+                'SELECT AVG(rating) as average_rating, COUNT(*) as review_count
+                 FROM ' . _DB_PREFIX_ . 'trustpilot_reviews
+                 WHERE id_product = ' . (int) $idProduct
+            );
+            if ($result && $result['review_count'] > 0) {
+                return array(
+                    'average_rating' => $result['average_rating'],
+                    'review_count' => $result['review_count'],
+                );
+            }
+        } catch (Exception $e) {
+            // Table may not exist
+        }
+        return null;
+    }
+
+    /**
+     * Get Stamped.io reviews data
+     * @param int $idProduct
+     * @return array|null
+     */
+    protected function getStampedReviews($idProduct)
+    {
+        try {
+            $result = Db::getInstance()->getRow(
+                'SELECT AVG(rating) as average_rating, COUNT(*) as review_count
+                 FROM ' . _DB_PREFIX_ . 'stamped_reviews
+                 WHERE id_product = ' . (int) $idProduct
+            );
+            if ($result && $result['review_count'] > 0) {
+                return array(
+                    'average_rating' => $result['average_rating'],
+                    'review_count' => $result['review_count'],
+                );
+            }
+        } catch (Exception $e) {
+            // Table may not exist
+        }
+        return null;
+    }
+
+    /**
+     * Get Judge.me reviews data
+     * @param int $idProduct
+     * @return array|null
+     */
+    protected function getJudgemeReviews($idProduct)
+    {
+        try {
+            $result = Db::getInstance()->getRow(
+                'SELECT AVG(rating) as average_rating, COUNT(*) as review_count
+                 FROM ' . _DB_PREFIX_ . 'judgeme_reviews
+                 WHERE id_product = ' . (int) $idProduct
+            );
+            if ($result && $result['review_count'] > 0) {
+                return array(
+                    'average_rating' => $result['average_rating'],
+                    'review_count' => $result['review_count'],
+                );
+            }
+        } catch (Exception $e) {
+            // Table may not exist
+        }
+        return null;
+    }
+
+    /**
+     * Try to get review data from common review table patterns
+     * @param int $idProduct
+     * @return array|null
+     */
+    protected function getGenericReviewData($idProduct)
+    {
+        // Common table patterns for review modules
+        $tablePatterns = array(
+            'product_comment',
+            'product_review',
+            'reviews',
+            'product_reviews',
+            'customer_reviews',
+        );
+
+        foreach ($tablePatterns as $pattern) {
+            try {
+                $tableName = _DB_PREFIX_ . $pattern;
+
+                // Check if table exists
+                $tableExists = Db::getInstance()->executeS(
+                    "SHOW TABLES LIKE '" . pSQL($tableName) . "'"
+                );
+
+                if (!empty($tableExists)) {
+                    // Try to get rating data
+                    $result = Db::getInstance()->getRow(
+                        'SELECT AVG(COALESCE(rating, grade, note, score)) as average_rating,
+                                COUNT(*) as review_count
+                         FROM ' . bqSQL($tableName) . '
+                         WHERE id_product = ' . (int) $idProduct . '
+                         AND (active = 1 OR validate = 1 OR validated = 1 OR status = 1)'
+                    );
+
+                    if ($result && $result['review_count'] > 0) {
+                        return array(
+                            'average_rating' => $result['average_rating'],
+                            'review_count' => $result['review_count'],
+                        );
+                    }
+                }
+            } catch (Exception $e) {
+                // Continue to next pattern
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -2859,5 +3077,1309 @@ class ProSEOMaster extends Module
                 ),
             ),
         );
+    }
+
+    /**
+     * Hook: actionProductDelete
+     * Create automatic redirect when product is deleted
+     * @param array $params
+     */
+    public function hookActionProductDelete($params)
+    {
+        if (!isset($params['id_product'])) {
+            return;
+        }
+
+        $idProduct = (int) $params['id_product'];
+        $product = new Product($idProduct, true, $this->context->language->id);
+
+        if (!Validate::isLoadedObject($product)) {
+            return;
+        }
+
+        $redirects = new ProSEOMasterRedirects();
+        $redirects->autoRedirectDeletedProduct($idProduct, $product->id_category_default);
+    }
+
+    /**
+     * Hook: actionCategoryDelete
+     * Create automatic redirect when category is deleted
+     * @param array $params
+     */
+    public function hookActionCategoryDelete($params)
+    {
+        if (!isset($params['category'])) {
+            return;
+        }
+
+        $category = $params['category'];
+        $idCategory = (int) $category->id;
+        $idParent = (int) $category->id_parent;
+
+        $redirects = new ProSEOMasterRedirects();
+        $redirects->autoRedirectDeletedCategory($idCategory, $idParent);
+    }
+
+    /**
+     * Hook: actionDispatcher
+     * Handle 301 redirects for old URLs
+     * @param array $params
+     */
+    public function hookActionDispatcher($params)
+    {
+        // Only process on 404 errors
+        if (http_response_code() !== 404) {
+            // Check if URL exists in redirects anyway
+            $redirects = new ProSEOMasterRedirects();
+            $redirect = $redirects->getRedirect($_SERVER['REQUEST_URI']);
+
+            if ($redirect) {
+                $newUrl = $redirect['new_url'];
+
+                // Make absolute URL if needed
+                if (strpos($newUrl, 'http') !== 0) {
+                    $baseUrl = $this->context->link->getBaseLink();
+                    $newUrl = rtrim($baseUrl, '/') . $newUrl;
+                }
+
+                header('HTTP/1.1 ' . $redirect['redirect_type'] . ' Moved Permanently');
+                header('Location: ' . $newUrl);
+                header('Connection: close');
+                exit;
+            }
+        }
+    }
+
+    /**
+     * Get content with redirect manager
+     * Override to add redirect handling
+     * @return string
+     */
+    public function getContent()
+    {
+        $output = '';
+
+        // Handle form submissions
+        if (Tools::isSubmit('submitProSEOMasterConfig')) {
+            $output .= $this->postProcess();
+        }
+
+        // Handle sitemap generation
+        if (Tools::isSubmit('generateSitemap')) {
+            $output .= $this->generateSitemapAction();
+        }
+
+        // Handle robots.txt generation
+        if (Tools::isSubmit('generateRobots')) {
+            $output .= $this->generateRobotsAction();
+        }
+
+        // Handle SEO audit
+        if (Tools::isSubmit('runSeoAudit')) {
+            $output .= $this->runSeoAuditAction();
+        }
+
+        // Handle .htaccess generation
+        if (Tools::isSubmit('generateHtaccess')) {
+            $output .= $this->generateHtaccessAction();
+        }
+
+        // Handle cron token regeneration
+        if (Tools::isSubmit('regenerateCronToken')) {
+            $output .= $this->regenerateCronTokenAction();
+        }
+
+        // Handle redirect actions
+        if (Tools::isSubmit('addRedirect')) {
+            $output .= $this->addRedirectAction();
+        }
+
+        if (Tools::isSubmit('deleteRedirect')) {
+            $output .= $this->deleteRedirectAction();
+        }
+
+        if (Tools::isSubmit('toggleRedirect')) {
+            $output .= $this->toggleRedirectAction();
+        }
+
+        if (Tools::isSubmit('importRedirects')) {
+            $output .= $this->importRedirectsAction();
+        }
+
+        if (Tools::isSubmit('exportRedirects')) {
+            $this->exportRedirectsAction();
+        }
+
+        if (Tools::isSubmit('cleanRedirects')) {
+            $output .= $this->cleanRedirectsAction();
+        }
+
+        // Handle link checker actions
+        if (Tools::isSubmit('runLinkChecker')) {
+            $output .= $this->runLinkCheckerAction();
+        }
+
+        if (Tools::isSubmit('exportBrokenLinks')) {
+            $this->exportBrokenLinksAction();
+        }
+
+        // Handle schema testing
+        if (Tools::isSubmit('testProductSchema')) {
+            $output .= $this->testProductSchemaAction();
+        }
+
+        if (Tools::isSubmit('auditAllSchemas')) {
+            $output .= $this->auditAllSchemasAction();
+        }
+
+        // Handle internal linking analysis
+        if (Tools::isSubmit('analyzeLinking')) {
+            $output .= $this->analyzeLinkingAction();
+        }
+
+        // Handle SEO export
+        if (Tools::isSubmit('exportSeoData')) {
+            $this->exportSeoDataAction();
+        }
+
+        // Handle SEO import
+        if (Tools::isSubmit('importSeoData')) {
+            $output .= $this->importSeoDataAction();
+        }
+
+        // Render dashboard + forms + all sections
+        return $output . $this->renderDashboard() . $this->renderRedirectManager() . $this->renderLinkChecker() . $this->renderSchemaTester() . $this->renderBulkEditor() . $this->renderForm() . $this->renderAdvancedForm();
+    }
+
+    /**
+     * Add redirect action
+     * @return string
+     */
+    protected function addRedirectAction()
+    {
+        $oldUrl = Tools::getValue('redirect_old_url');
+        $newUrl = Tools::getValue('redirect_new_url');
+        $redirectType = (int) Tools::getValue('redirect_type', 301);
+
+        if (empty($oldUrl) || empty($newUrl)) {
+            return $this->displayError($this->l('Both old URL and new URL are required.'));
+        }
+
+        $redirects = new ProSEOMasterRedirects();
+        if ($redirects->addRedirect($oldUrl, $newUrl, $redirectType)) {
+            return $this->displayConfirmation($this->l('Redirect added successfully.'));
+        }
+
+        return $this->displayError($this->l('Error adding redirect. The URL may already exist.'));
+    }
+
+    /**
+     * Delete redirect action
+     * @return string
+     */
+    protected function deleteRedirectAction()
+    {
+        $idRedirect = (int) Tools::getValue('id_redirect');
+
+        if ($idRedirect <= 0) {
+            return $this->displayError($this->l('Invalid redirect ID.'));
+        }
+
+        $redirects = new ProSEOMasterRedirects();
+        if ($redirects->deleteRedirect($idRedirect)) {
+            return $this->displayConfirmation($this->l('Redirect deleted successfully.'));
+        }
+
+        return $this->displayError($this->l('Error deleting redirect.'));
+    }
+
+    /**
+     * Toggle redirect active status
+     * @return string
+     */
+    protected function toggleRedirectAction()
+    {
+        $idRedirect = (int) Tools::getValue('id_redirect');
+
+        if ($idRedirect <= 0) {
+            return $this->displayError($this->l('Invalid redirect ID.'));
+        }
+
+        $redirects = new ProSEOMasterRedirects();
+        if ($redirects->toggleActive($idRedirect)) {
+            return $this->displayConfirmation($this->l('Redirect status updated.'));
+        }
+
+        return $this->displayError($this->l('Error updating redirect status.'));
+    }
+
+    /**
+     * Import redirects from CSV
+     * @return string
+     */
+    protected function importRedirectsAction()
+    {
+        if (!isset($_FILES['redirect_csv']) || $_FILES['redirect_csv']['error'] !== UPLOAD_ERR_OK) {
+            return $this->displayError($this->l('Please upload a valid CSV file.'));
+        }
+
+        $csvContent = file_get_contents($_FILES['redirect_csv']['tmp_name']);
+        $redirects = new ProSEOMasterRedirects();
+        $results = $redirects->importFromCsv($csvContent);
+
+        $message = sprintf(
+            $this->l('Import completed: %d successful, %d errors, %d skipped.'),
+            $results['success'],
+            $results['errors'],
+            $results['skipped']
+        );
+
+        if ($results['errors'] > 0) {
+            return $this->displayWarning($message);
+        }
+
+        return $this->displayConfirmation($message);
+    }
+
+    /**
+     * Export redirects to CSV
+     */
+    protected function exportRedirectsAction()
+    {
+        $redirects = new ProSEOMasterRedirects();
+        $csv = $redirects->exportToCsv();
+
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename="redirects_' . date('Y-m-d') . '.csv"');
+        header('Pragma: no-cache');
+        header('Expires: 0');
+
+        echo $csv;
+        exit;
+    }
+
+    /**
+     * Clean old unused redirects
+     * @return string
+     */
+    protected function cleanRedirectsAction()
+    {
+        $redirects = new ProSEOMasterRedirects();
+        $deleted = $redirects->cleanOldRedirects(90);
+
+        return $this->displayConfirmation(
+            sprintf($this->l('%d unused redirects older than 90 days have been removed.'), $deleted)
+        );
+    }
+
+    /**
+     * Render redirect manager section
+     * @return string
+     */
+    protected function renderRedirectManager()
+    {
+        $redirects = new ProSEOMasterRedirects();
+        $stats = $redirects->getStatistics();
+        $allRedirects = $redirects->getAllRedirects(false, 50, 0);
+
+        $html = '<div class="panel">';
+        $html .= '<h3><i class="icon-random"></i> ' . $this->l('301 Redirect Manager') . '</h3>';
+
+        // Statistics
+        $html .= '<div class="row" style="margin-bottom:20px;">';
+        $html .= '<div class="col-lg-3 col-md-6">';
+        $html .= '<div class="panel" style="background:#3c8dbc;color:#fff;text-align:center;padding:15px;">';
+        $html .= '<h3 style="margin:0;">' . $stats['total'] . '</h3>';
+        $html .= '<p style="margin:5px 0 0;">' . $this->l('Total Redirects') . '</p>';
+        $html .= '</div></div>';
+
+        $html .= '<div class="col-lg-3 col-md-6">';
+        $html .= '<div class="panel" style="background:#00a65a;color:#fff;text-align:center;padding:15px;">';
+        $html .= '<h3 style="margin:0;">' . $stats['active'] . '</h3>';
+        $html .= '<p style="margin:5px 0 0;">' . $this->l('Active Redirects') . '</p>';
+        $html .= '</div></div>';
+
+        $html .= '<div class="col-lg-3 col-md-6">';
+        $html .= '<div class="panel" style="background:#f39c12;color:#fff;text-align:center;padding:15px;">';
+        $html .= '<h3 style="margin:0;">' . $stats['total_hits'] . '</h3>';
+        $html .= '<p style="margin:5px 0 0;">' . $this->l('Total Hits') . '</p>';
+        $html .= '</div></div>';
+
+        $html .= '<div class="col-lg-3 col-md-6">';
+        $html .= '<div class="panel" style="background:#605ca8;color:#fff;text-align:center;padding:15px;">';
+        $html .= '<h3 style="margin:0;">' . $stats['auto_generated'] . '</h3>';
+        $html .= '<p style="margin:5px 0 0;">' . $this->l('Auto-Generated') . '</p>';
+        $html .= '</div></div>';
+        $html .= '</div>';
+
+        // Add redirect form
+        $html .= '<div class="panel" style="background:#f9f9f9;">';
+        $html .= '<h4><i class="icon-plus"></i> ' . $this->l('Add New Redirect') . '</h4>';
+        $html .= '<form method="post" class="form-horizontal">';
+
+        $html .= '<div class="form-group">';
+        $html .= '<label class="control-label col-lg-2">' . $this->l('Old URL') . ':</label>';
+        $html .= '<div class="col-lg-4">';
+        $html .= '<input type="text" name="redirect_old_url" class="form-control" placeholder="/old-product-url" required>';
+        $html .= '</div>';
+
+        $html .= '<label class="control-label col-lg-2">' . $this->l('New URL') . ':</label>';
+        $html .= '<div class="col-lg-4">';
+        $html .= '<input type="text" name="redirect_new_url" class="form-control" placeholder="/new-product-url" required>';
+        $html .= '</div>';
+        $html .= '</div>';
+
+        $html .= '<div class="form-group">';
+        $html .= '<label class="control-label col-lg-2">' . $this->l('Type') . ':</label>';
+        $html .= '<div class="col-lg-2">';
+        $html .= '<select name="redirect_type" class="form-control">';
+        $html .= '<option value="301">301 (Permanent)</option>';
+        $html .= '<option value="302">302 (Temporary)</option>';
+        $html .= '</select>';
+        $html .= '</div>';
+
+        $html .= '<div class="col-lg-8">';
+        $html .= '<button type="submit" name="addRedirect" class="btn btn-primary">';
+        $html .= '<i class="icon-plus"></i> ' . $this->l('Add Redirect');
+        $html .= '</button>';
+        $html .= '</div>';
+        $html .= '</div>';
+
+        $html .= '</form>';
+        $html .= '</div>';
+
+        // Import/Export
+        $html .= '<div class="row" style="margin:20px 0;">';
+        $html .= '<div class="col-lg-6">';
+        $html .= '<form method="post" enctype="multipart/form-data" class="form-inline">';
+        $html .= '<div class="input-group">';
+        $html .= '<input type="file" name="redirect_csv" class="form-control" accept=".csv">';
+        $html .= '<span class="input-group-btn">';
+        $html .= '<button type="submit" name="importRedirects" class="btn btn-info">';
+        $html .= '<i class="icon-upload"></i> ' . $this->l('Import CSV');
+        $html .= '</button>';
+        $html .= '</span>';
+        $html .= '</div>';
+        $html .= '<p class="help-block">' . $this->l('CSV format: old_url,new_url,redirect_type (301/302)') . '</p>';
+        $html .= '</form>';
+        $html .= '</div>';
+
+        $html .= '<div class="col-lg-6 text-right">';
+        $html .= '<form method="post" style="display:inline-block;">';
+        $html .= '<button type="submit" name="exportRedirects" class="btn btn-success">';
+        $html .= '<i class="icon-download"></i> ' . $this->l('Export CSV');
+        $html .= '</button>';
+        $html .= '</form>';
+        $html .= ' ';
+        $html .= '<form method="post" style="display:inline-block;">';
+        $html .= '<button type="submit" name="cleanRedirects" class="btn btn-warning" onclick="return confirm(\'' . $this->l('Delete unused auto-generated redirects older than 90 days?') . '\');">';
+        $html .= '<i class="icon-trash"></i> ' . $this->l('Clean Old Redirects');
+        $html .= '</button>';
+        $html .= '</form>';
+        $html .= '</div>';
+        $html .= '</div>';
+
+        // Redirects table
+        $html .= '<h4><i class="icon-list"></i> ' . $this->l('Existing Redirects') . '</h4>';
+        $html .= '<table class="table table-striped">';
+        $html .= '<thead><tr>';
+        $html .= '<th>' . $this->l('Old URL') . '</th>';
+        $html .= '<th>' . $this->l('New URL') . '</th>';
+        $html .= '<th>' . $this->l('Type') . '</th>';
+        $html .= '<th>' . $this->l('Hits') . '</th>';
+        $html .= '<th>' . $this->l('Last Hit') . '</th>';
+        $html .= '<th>' . $this->l('Auto') . '</th>';
+        $html .= '<th>' . $this->l('Status') . '</th>';
+        $html .= '<th>' . $this->l('Actions') . '</th>';
+        $html .= '</tr></thead><tbody>';
+
+        if (empty($allRedirects)) {
+            $html .= '<tr><td colspan="8" class="text-center">' . $this->l('No redirects yet. Add your first redirect above or delete a product to auto-generate one.') . '</td></tr>';
+        } else {
+            foreach ($allRedirects as $redirect) {
+                $html .= '<tr>';
+                $html .= '<td><code>' . htmlspecialchars($redirect['old_url']) . '</code></td>';
+                $html .= '<td><code>' . htmlspecialchars($redirect['new_url']) . '</code></td>';
+                $html .= '<td><span class="badge">' . $redirect['redirect_type'] . '</span></td>';
+                $html .= '<td>' . $redirect['hits'] . '</td>';
+                $html .= '<td>' . ($redirect['last_hit'] ? date('d/m/Y H:i', strtotime($redirect['last_hit'])) : '-') . '</td>';
+                $html .= '<td>' . ($redirect['auto_generated'] ? '<i class="icon-check text-success"></i>' : '-') . '</td>';
+                $html .= '<td>';
+                if ($redirect['active']) {
+                    $html .= '<span class="badge" style="background:#00a65a;">' . $this->l('Active') . '</span>';
+                } else {
+                    $html .= '<span class="badge" style="background:#dd4b39;">' . $this->l('Inactive') . '</span>';
+                }
+                $html .= '</td>';
+                $html .= '<td>';
+                $html .= '<form method="post" style="display:inline;">';
+                $html .= '<input type="hidden" name="id_redirect" value="' . $redirect['id_redirect'] . '">';
+                $html .= '<button type="submit" name="toggleRedirect" class="btn btn-xs btn-default" title="' . $this->l('Toggle status') . '">';
+                $html .= '<i class="icon-power-off"></i>';
+                $html .= '</button>';
+                $html .= '</form> ';
+                $html .= '<form method="post" style="display:inline;">';
+                $html .= '<input type="hidden" name="id_redirect" value="' . $redirect['id_redirect'] . '">';
+                $html .= '<button type="submit" name="deleteRedirect" class="btn btn-xs btn-danger" onclick="return confirm(\'' . $this->l('Delete this redirect?') . '\');" title="' . $this->l('Delete') . '">';
+                $html .= '<i class="icon-trash"></i>';
+                $html .= '</button>';
+                $html .= '</form>';
+                $html .= '</td>';
+                $html .= '</tr>';
+            }
+        }
+
+        $html .= '</tbody></table>';
+
+        // Info box
+        $html .= '<div class="alert alert-info">';
+        $html .= '<i class="icon-info-circle"></i> <strong>' . $this->l('How it works:') . '</strong><br>';
+        $html .= '<ul style="margin:10px 0 0 20px;">';
+        $html .= '<li>' . $this->l('301 redirects tell search engines the page has permanently moved (transfers SEO value)') . '</li>';
+        $html .= '<li>' . $this->l('302 redirects are for temporary moves (does not transfer SEO value)') . '</li>';
+        $html .= '<li>' . $this->l('Auto-generated redirects are created when you delete products/categories') . '</li>';
+        $html .= '<li>' . $this->l('The "Hits" counter shows how many times the redirect was used') . '</li>';
+        $html .= '</ul>';
+        $html .= '</div>';
+
+        $html .= '</div>';
+
+        return $html;
+    }
+
+    /**
+     * Run link checker action
+     * @return string
+     */
+    protected function runLinkCheckerAction()
+    {
+        $scanType = Tools::getValue('scan_type', 'quick');
+        $linkChecker = new ProSEOMasterLinkChecker();
+
+        $startTime = microtime(true);
+
+        switch ($scanType) {
+            case 'full':
+                $results = $linkChecker->scanAllProducts(0);
+                break;
+            case 'products':
+                $results = $linkChecker->scanAllProducts(100);
+                break;
+            case 'cms':
+                $results = $linkChecker->scanCmsPages();
+                break;
+            case 'images':
+                $results = $linkChecker->checkProductImages(100);
+                break;
+            default:
+                $results = $linkChecker->quickScan(30);
+        }
+
+        $duration = round(microtime(true) - $startTime, 2);
+
+        // Store results in session for display and export
+        $this->context->cookie->__set('proseo_link_results', json_encode($results));
+        $this->context->cookie->write();
+
+        return $this->renderLinkCheckerResults($results, $duration, $scanType);
+    }
+
+    /**
+     * Export broken links to CSV
+     */
+    protected function exportBrokenLinksAction()
+    {
+        $resultsJson = $this->context->cookie->__get('proseo_link_results');
+
+        if (empty($resultsJson)) {
+            return;
+        }
+
+        $results = json_decode($resultsJson, true);
+
+        $csv = "Type,URL,Source Type,Source ID,Source Name,HTTP Code,Details\n";
+
+        // Broken links
+        if (!empty($results['broken_links'])) {
+            foreach ($results['broken_links'] as $link) {
+                $csv .= '"Broken Link",';
+                $csv .= '"' . $link['url'] . '",';
+                $csv .= '"' . $link['source_type'] . '",';
+                $csv .= $link['source_id'] . ',';
+                $csv .= '"' . str_replace('"', '""', $link['source_name']) . '",';
+                $csv .= $link['http_code'] . ',';
+                $csv .= '"' . str_replace('"', '""', $link['error']) . '"' . "\n";
+            }
+        }
+
+        // Broken images
+        if (!empty($results['broken_images'])) {
+            foreach ($results['broken_images'] as $image) {
+                $csv .= '"Broken Image",';
+                $csv .= '"' . $image['url'] . '",';
+                $csv .= '"' . $image['source_type'] . '",';
+                $csv .= $image['source_id'] . ',';
+                $csv .= '"' . str_replace('"', '""', $image['source_name']) . '",';
+                $csv .= $image['http_code'] . ',';
+                $csv .= '"' . str_replace('"', '""', $image['error']) . '"' . "\n";
+            }
+        }
+
+        // Redirects
+        if (!empty($results['redirects'])) {
+            foreach ($results['redirects'] as $redirect) {
+                $csv .= '"Redirect",';
+                $csv .= '"' . $redirect['url'] . '",';
+                $csv .= '"' . $redirect['source_type'] . '",';
+                $csv .= $redirect['source_id'] . ',';
+                $csv .= '"' . str_replace('"', '""', $redirect['source_name']) . '",';
+                $csv .= $redirect['http_code'] . ',';
+                $csv .= '"' . $redirect['redirect_url'] . '"' . "\n";
+            }
+        }
+
+        // Missing images
+        if (!empty($results['missing_images'])) {
+            foreach ($results['missing_images'] as $image) {
+                $csv .= '"Missing Image",';
+                $csv .= '"' . $image['expected_path'] . '",';
+                $csv .= '"product",';
+                $csv .= $image['product_id'] . ',';
+                $csv .= '"' . str_replace('"', '""', $image['product_name']) . '",';
+                $csv .= '404,';
+                $csv .= '"Image ID: ' . $image['image_id'] . '"' . "\n";
+            }
+        }
+
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename="broken_links_' . date('Y-m-d') . '.csv"');
+        header('Pragma: no-cache');
+        header('Expires: 0');
+
+        echo $csv;
+        exit;
+    }
+
+    /**
+     * Render link checker results
+     * @param array $results
+     * @param float $duration
+     * @param string $scanType
+     * @return string
+     */
+    protected function renderLinkCheckerResults($results, $duration, $scanType)
+    {
+        $html = '<div class="panel">';
+        $html .= '<h3><i class="icon-search"></i> ' . $this->l('Link Checker Results') . '</h3>';
+
+        // Summary stats
+        $html .= '<div class="alert alert-info">';
+        $html .= '<strong>' . $this->l('Scan completed in') . ' ' . $duration . ' ' . $this->l('seconds') . '</strong><br>';
+
+        if (isset($results['stats'])) {
+            $html .= sprintf(
+                $this->l('Scanned %d products, checked %d links.'),
+                $results['stats']['products_scanned'],
+                $results['stats']['links_checked']
+            );
+        }
+        $html .= '</div>';
+
+        // Stats boxes
+        $brokenLinks = count($results['broken_links'] ?? array());
+        $brokenImages = count($results['broken_images'] ?? array());
+        $redirects = count($results['redirects'] ?? array());
+        $missingImages = count($results['missing_images'] ?? array());
+
+        $html .= '<div class="row" style="margin-bottom:20px;">';
+
+        $html .= '<div class="col-lg-3 col-md-6">';
+        $html .= '<div class="panel" style="background:' . ($brokenLinks > 0 ? '#dd4b39' : '#00a65a') . ';color:#fff;text-align:center;padding:15px;">';
+        $html .= '<h3 style="margin:0;">' . $brokenLinks . '</h3>';
+        $html .= '<p style="margin:5px 0 0;">' . $this->l('Broken Links') . '</p>';
+        $html .= '</div></div>';
+
+        $html .= '<div class="col-lg-3 col-md-6">';
+        $html .= '<div class="panel" style="background:' . ($brokenImages + $missingImages > 0 ? '#dd4b39' : '#00a65a') . ';color:#fff;text-align:center;padding:15px;">';
+        $html .= '<h3 style="margin:0;">' . ($brokenImages + $missingImages) . '</h3>';
+        $html .= '<p style="margin:5px 0 0;">' . $this->l('Broken Images') . '</p>';
+        $html .= '</div></div>';
+
+        $html .= '<div class="col-lg-3 col-md-6">';
+        $html .= '<div class="panel" style="background:' . ($redirects > 0 ? '#f39c12' : '#00a65a') . ';color:#fff;text-align:center;padding:15px;">';
+        $html .= '<h3 style="margin:0;">' . $redirects . '</h3>';
+        $html .= '<p style="margin:5px 0 0;">' . $this->l('Redirects Found') . '</p>';
+        $html .= '</div></div>';
+
+        $html .= '<div class="col-lg-3 col-md-6">';
+        $html .= '<div class="panel" style="background:#00c0ef;color:#fff;text-align:center;padding:15px;">';
+        $html .= '<h3 style="margin:0;">' . count($results['external_links'] ?? array()) . '</h3>';
+        $html .= '<p style="margin:5px 0 0;">' . $this->l('External Links') . '</p>';
+        $html .= '</div></div>';
+
+        $html .= '</div>';
+
+        // Export button
+        if ($brokenLinks > 0 || $brokenImages > 0 || $redirects > 0 || $missingImages > 0) {
+            $html .= '<form method="post" style="margin-bottom:20px;">';
+            $html .= '<button type="submit" name="exportBrokenLinks" class="btn btn-success">';
+            $html .= '<i class="icon-download"></i> ' . $this->l('Export Results to CSV');
+            $html .= '</button>';
+            $html .= '</form>';
+        }
+
+        // Broken Links Table
+        if ($brokenLinks > 0) {
+            $html .= '<h4 style="color:#dd4b39;"><i class="icon-unlink"></i> ' . $this->l('Broken Links') . '</h4>';
+            $html .= '<table class="table table-striped">';
+            $html .= '<thead><tr>';
+            $html .= '<th>' . $this->l('URL') . '</th>';
+            $html .= '<th>' . $this->l('Found In') . '</th>';
+            $html .= '<th>' . $this->l('HTTP Code') . '</th>';
+            $html .= '<th>' . $this->l('Error') . '</th>';
+            $html .= '<th>' . $this->l('Action') . '</th>';
+            $html .= '</tr></thead><tbody>';
+
+            foreach (array_slice($results['broken_links'], 0, 20) as $link) {
+                $html .= '<tr>';
+                $html .= '<td><code style="word-break:break-all;">' . htmlspecialchars($link['url']) . '</code>';
+                if ($link['is_external']) {
+                    $html .= ' <span class="badge">External</span>';
+                }
+                $html .= '</td>';
+                $html .= '<td>';
+                if ($link['source_type'] === 'product') {
+                    $editUrl = $this->context->link->getAdminLink('AdminProducts') . '&id_product=' . $link['source_id'] . '&updateproduct';
+                    $html .= '<a href="' . $editUrl . '" target="_blank">' . htmlspecialchars($link['source_name']) . '</a>';
+                } else {
+                    $html .= htmlspecialchars($link['source_name']);
+                }
+                $html .= '</td>';
+                $html .= '<td><span class="badge" style="background:#dd4b39;">' . $link['http_code'] . '</span></td>';
+                $html .= '<td>' . htmlspecialchars($link['error']) . '</td>';
+                $html .= '<td>';
+                if ($link['source_type'] === 'product') {
+                    $editUrl = $this->context->link->getAdminLink('AdminProducts') . '&id_product=' . $link['source_id'] . '&updateproduct';
+                    $html .= '<a href="' . $editUrl . '" target="_blank" class="btn btn-xs btn-primary"><i class="icon-pencil"></i> ' . $this->l('Edit') . '</a>';
+                }
+                $html .= '</td>';
+                $html .= '</tr>';
+            }
+
+            $html .= '</tbody></table>';
+
+            if ($brokenLinks > 20) {
+                $html .= '<p class="text-muted">' . sprintf($this->l('Showing 20 of %d broken links. Export to CSV for complete list.'), $brokenLinks) . '</p>';
+            }
+        }
+
+        // Broken Images Table
+        if ($brokenImages > 0 || $missingImages > 0) {
+            $html .= '<h4 style="color:#dd4b39;margin-top:20px;"><i class="icon-picture-o"></i> ' . $this->l('Broken/Missing Images') . '</h4>';
+            $html .= '<table class="table table-striped">';
+            $html .= '<thead><tr>';
+            $html .= '<th>' . $this->l('Image URL/Path') . '</th>';
+            $html .= '<th>' . $this->l('Found In') . '</th>';
+            $html .= '<th>' . $this->l('HTTP Code') . '</th>';
+            $html .= '<th>' . $this->l('Action') . '</th>';
+            $html .= '</tr></thead><tbody>';
+
+            $allBrokenImages = array_merge($results['broken_images'] ?? array(), $results['missing_images'] ?? array());
+
+            foreach (array_slice($allBrokenImages, 0, 20) as $image) {
+                $html .= '<tr>';
+                $html .= '<td><code style="word-break:break-all;">' . htmlspecialchars($image['url'] ?? $image['expected_path'] ?? '') . '</code></td>';
+                $html .= '<td>';
+                $productId = $image['source_id'] ?? $image['product_id'] ?? 0;
+                $productName = $image['source_name'] ?? $image['product_name'] ?? '';
+                if ($productId > 0) {
+                    $editUrl = $this->context->link->getAdminLink('AdminProducts') . '&id_product=' . $productId . '&updateproduct';
+                    $html .= '<a href="' . $editUrl . '" target="_blank">' . htmlspecialchars($productName) . '</a>';
+                } else {
+                    $html .= htmlspecialchars($productName);
+                }
+                $html .= '</td>';
+                $html .= '<td><span class="badge" style="background:#dd4b39;">' . ($image['http_code'] ?? '404') . '</span></td>';
+                $html .= '<td>';
+                if ($productId > 0) {
+                    $editUrl = $this->context->link->getAdminLink('AdminProducts') . '&id_product=' . $productId . '&updateproduct';
+                    $html .= '<a href="' . $editUrl . '" target="_blank" class="btn btn-xs btn-primary"><i class="icon-pencil"></i> ' . $this->l('Edit') . '</a>';
+                }
+                $html .= '</td>';
+                $html .= '</tr>';
+            }
+
+            $html .= '</tbody></table>';
+        }
+
+        // Redirects Table
+        if ($redirects > 0) {
+            $html .= '<h4 style="color:#f39c12;margin-top:20px;"><i class="icon-random"></i> ' . $this->l('Redirects (should be updated)') . '</h4>';
+            $html .= '<table class="table table-striped">';
+            $html .= '<thead><tr>';
+            $html .= '<th>' . $this->l('Original URL') . '</th>';
+            $html .= '<th>' . $this->l('Redirects To') . '</th>';
+            $html .= '<th>' . $this->l('Found In') . '</th>';
+            $html .= '<th>' . $this->l('Code') . '</th>';
+            $html .= '</tr></thead><tbody>';
+
+            foreach (array_slice($results['redirects'], 0, 20) as $redirect) {
+                $html .= '<tr>';
+                $html .= '<td><code>' . htmlspecialchars($redirect['url']) . '</code></td>';
+                $html .= '<td><code>' . htmlspecialchars($redirect['redirect_url']) . '</code></td>';
+                $html .= '<td>' . htmlspecialchars($redirect['source_name']) . '</td>';
+                $html .= '<td><span class="badge" style="background:#f39c12;">' . $redirect['http_code'] . '</span></td>';
+                $html .= '</tr>';
+            }
+
+            $html .= '</tbody></table>';
+        }
+
+        // All OK message
+        if ($brokenLinks === 0 && $brokenImages === 0 && $redirects === 0 && $missingImages === 0) {
+            $html .= '<div class="alert alert-success">';
+            $html .= '<i class="icon-check-circle"></i> <strong>' . $this->l('All links and images are valid!') . '</strong>';
+            $html .= '</div>';
+        }
+
+        $html .= '</div>';
+
+        return $html;
+    }
+
+    /**
+     * Render link checker section
+     * @return string
+     */
+    protected function renderLinkChecker()
+    {
+        $html = '<div class="panel">';
+        $html .= '<h3><i class="icon-unlink"></i> ' . $this->l('Broken Link Checker') . '</h3>';
+
+        $html .= '<div class="alert alert-info">';
+        $html .= '<i class="icon-info-circle"></i> ' . $this->l('Scan your product descriptions and CMS pages for broken links, missing images, and redirects that should be updated.');
+        $html .= '</div>';
+
+        $html .= '<form method="post" class="form-horizontal">';
+
+        $html .= '<div class="form-group">';
+        $html .= '<label class="control-label col-lg-3">' . $this->l('Scan Type') . ':</label>';
+        $html .= '<div class="col-lg-9">';
+        $html .= '<select name="scan_type" class="form-control fixed-width-xl">';
+        $html .= '<option value="quick">' . $this->l('Quick Scan - Products updated in last 30 days') . '</option>';
+        $html .= '<option value="products">' . $this->l('Products - First 100 products') . '</option>';
+        $html .= '<option value="full">' . $this->l('Full Scan - All products (may take time)') . '</option>';
+        $html .= '<option value="cms">' . $this->l('CMS Pages - All CMS content') . '</option>';
+        $html .= '<option value="images">' . $this->l('Product Images - Check for missing files') . '</option>';
+        $html .= '</select>';
+        $html .= '</div>';
+        $html .= '</div>';
+
+        $html .= '<div class="form-group">';
+        $html .= '<div class="col-lg-offset-3 col-lg-9">';
+        $html .= '<button type="submit" name="runLinkChecker" class="btn btn-primary">';
+        $html .= '<i class="icon-search"></i> ' . $this->l('Run Link Check');
+        $html .= '</button>';
+        $html .= '</div>';
+        $html .= '</div>';
+
+        $html .= '</form>';
+
+        $html .= '<hr>';
+        $html .= '<h5>' . $this->l('What this tool checks:') . '</h5>';
+        $html .= '<ul>';
+        $html .= '<li><strong>' . $this->l('Broken Links') . ':</strong> ' . $this->l('Links in product descriptions that return 404 or other errors') . '</li>';
+        $html .= '<li><strong>' . $this->l('Broken Images') . ':</strong> ' . $this->l('Images referenced in content that no longer exist') . '</li>';
+        $html .= '<li><strong>' . $this->l('Redirects') . ':</strong> ' . $this->l('Links that redirect (301/302) and should be updated to the final URL') . '</li>';
+        $html .= '<li><strong>' . $this->l('External Links') . ':</strong> ' . $this->l('Links pointing to other websites') . '</li>';
+        $html .= '</ul>';
+
+        $html .= '</div>';
+
+        return $html;
+    }
+
+    /**
+     * Test product schema action
+     * @return string
+     */
+    protected function testProductSchemaAction()
+    {
+        $idProduct = (int) Tools::getValue('schema_product_id');
+
+        if ($idProduct <= 0) {
+            return $this->displayError($this->l('Please enter a valid product ID.'));
+        }
+
+        $validator = new ProSEOMasterSchemaValidator();
+        $preview = $validator->generateProductSchemaPreview($idProduct, $this->context->language->id);
+
+        if (isset($preview['error'])) {
+            return $this->displayError($preview['error']);
+        }
+
+        return $this->renderSchemaPreview($preview, $idProduct);
+    }
+
+    /**
+     * Audit all schemas action
+     * @return string
+     */
+    protected function auditAllSchemasAction()
+    {
+        $validator = new ProSEOMasterSchemaValidator();
+        $results = $validator->auditAllSchemas();
+
+        return $this->renderSchemaAuditResults($results);
+    }
+
+    /**
+     * Analyze internal linking action
+     * @return string
+     */
+    protected function analyzeLinkingAction()
+    {
+        $audit = new ProSEOMasterAudit();
+        $results = $audit->analyzeInternalLinking();
+
+        return $this->renderLinkingAnalysis($results);
+    }
+
+    /**
+     * Render schema preview
+     * @param array $preview
+     * @param int $idProduct
+     * @return string
+     */
+    protected function renderSchemaPreview($preview, $idProduct)
+    {
+        $html = '<div class="panel">';
+        $html .= '<h3><i class="icon-code"></i> ' . $this->l('Schema Preview') . ' - Product #' . $idProduct . '</h3>';
+
+        // Validation status
+        $validation = $preview['validation'];
+        if ($validation['valid']) {
+            $html .= '<div class="alert alert-success">';
+            $html .= '<i class="icon-check-circle"></i> <strong>' . $this->l('Schema is valid!') . '</strong> ';
+            $html .= $this->l('Score') . ': ' . $validation['score'] . '/100';
+            $html .= '</div>';
+        } else {
+            $html .= '<div class="alert alert-danger">';
+            $html .= '<i class="icon-times-circle"></i> <strong>' . $this->l('Schema has errors') . '</strong>';
+            $html .= '</div>';
+        }
+
+        // Errors
+        if (!empty($validation['errors'])) {
+            $html .= '<h4 style="color:#dd4b39;"><i class="icon-times"></i> ' . $this->l('Errors') . '</h4>';
+            $html .= '<ul class="list-unstyled">';
+            foreach ($validation['errors'] as $error) {
+                $html .= '<li style="color:#dd4b39;"><i class="icon-times"></i> ' . htmlspecialchars($error) . '</li>';
+            }
+            $html .= '</ul>';
+        }
+
+        // Warnings
+        if (!empty($validation['warnings'])) {
+            $html .= '<h4 style="color:#f39c12;"><i class="icon-warning"></i> ' . $this->l('Warnings') . '</h4>';
+            $html .= '<ul class="list-unstyled">';
+            foreach ($validation['warnings'] as $warning) {
+                $html .= '<li style="color:#f39c12;"><i class="icon-warning"></i> ' . htmlspecialchars($warning) . '</li>';
+            }
+            $html .= '</ul>';
+        }
+
+        // JSON-LD Preview
+        $html .= '<h4><i class="icon-code"></i> ' . $this->l('JSON-LD Code') . '</h4>';
+        $html .= '<pre style="background:#2d2d2d;color:#f8f8f2;padding:15px;border-radius:4px;overflow-x:auto;max-height:400px;">';
+        $html .= '<code>' . htmlspecialchars($preview['json']) . '</code>';
+        $html .= '</pre>';
+
+        // Copy button
+        $html .= '<button type="button" class="btn btn-default" onclick="navigator.clipboard.writeText(' . htmlspecialchars(json_encode($preview['json']), ENT_QUOTES) . '); alert(\'Copied!\');">';
+        $html .= '<i class="icon-copy"></i> ' . $this->l('Copy JSON-LD');
+        $html .= '</button>';
+
+        // Test links
+        $html .= '<h4 style="margin-top:20px;"><i class="icon-external-link"></i> ' . $this->l('Test with Google Tools') . '</h4>';
+        $html .= '<div class="btn-group">';
+        foreach ($preview['test_urls'] as $name => $url) {
+            $label = str_replace('_', ' ', ucwords($name));
+            $html .= '<a href="' . $url . '" target="_blank" class="btn btn-info">';
+            $html .= '<i class="icon-external-link"></i> ' . $label;
+            $html .= '</a> ';
+        }
+        $html .= '</div>';
+
+        $html .= '</div>';
+
+        return $html;
+    }
+
+    /**
+     * Render schema audit results
+     * @param array $results
+     * @return string
+     */
+    protected function renderSchemaAuditResults($results)
+    {
+        $html = '<div class="panel">';
+        $html .= '<h3><i class="icon-tasks"></i> ' . $this->l('Schema Audit Results') . '</h3>';
+
+        // Stats
+        $html .= '<div class="row" style="margin-bottom:20px;">';
+
+        $html .= '<div class="col-lg-4">';
+        $html .= '<div class="panel" style="background:#3c8dbc;color:#fff;text-align:center;padding:15px;">';
+        $html .= '<h3 style="margin:0;">' . $results['products_checked'] . '</h3>';
+        $html .= '<p style="margin:5px 0 0;">' . $this->l('Products Checked') . '</p>';
+        $html .= '</div></div>';
+
+        $html .= '<div class="col-lg-4">';
+        $errorColor = $results['products_with_errors'] > 0 ? '#dd4b39' : '#00a65a';
+        $html .= '<div class="panel" style="background:' . $errorColor . ';color:#fff;text-align:center;padding:15px;">';
+        $html .= '<h3 style="margin:0;">' . $results['products_with_errors'] . '</h3>';
+        $html .= '<p style="margin:5px 0 0;">' . $this->l('With Errors') . '</p>';
+        $html .= '</div></div>';
+
+        $html .= '<div class="col-lg-4">';
+        $warnColor = $results['products_with_warnings'] > 0 ? '#f39c12' : '#00a65a';
+        $html .= '<div class="panel" style="background:' . $warnColor . ';color:#fff;text-align:center;padding:15px;">';
+        $html .= '<h3 style="margin:0;">' . $results['products_with_warnings'] . '</h3>';
+        $html .= '<p style="margin:5px 0 0;">' . $this->l('With Warnings') . '</p>';
+        $html .= '</div></div>';
+
+        $html .= '</div>';
+
+        // Common issues
+        if (!empty($results['common_issues'])) {
+            $html .= '<h4><i class="icon-list"></i> ' . $this->l('Common Issues') . '</h4>';
+            $html .= '<table class="table table-striped">';
+            $html .= '<thead><tr><th>' . $this->l('Issue') . '</th><th>' . $this->l('Count') . '</th></tr></thead>';
+            $html .= '<tbody>';
+            foreach ($results['common_issues'] as $issue => $count) {
+                $html .= '<tr><td>' . htmlspecialchars($issue) . '</td><td>' . $count . '</td></tr>';
+            }
+            $html .= '</tbody></table>';
+        }
+
+        // Products needing attention (first 10)
+        if (!empty($results['products_needing_attention'])) {
+            $html .= '<h4><i class="icon-warning"></i> ' . $this->l('Products Needing Attention') . '</h4>';
+            $html .= '<table class="table table-striped">';
+            $html .= '<thead><tr><th>ID</th><th>' . $this->l('Product') . '</th><th>' . $this->l('Errors') . '</th></tr></thead>';
+            $html .= '<tbody>';
+            foreach (array_slice($results['products_needing_attention'], 0, 10) as $product) {
+                $html .= '<tr>';
+                $html .= '<td>' . $product['id'] . '</td>';
+                $html .= '<td>' . htmlspecialchars($product['name']) . '</td>';
+                $html .= '<td>' . implode('<br>', array_map('htmlspecialchars', $product['errors'])) . '</td>';
+                $html .= '</tr>';
+            }
+            $html .= '</tbody></table>';
+        }
+
+        $html .= '</div>';
+
+        return $html;
+    }
+
+    /**
+     * Render internal linking analysis
+     * @param array $results
+     * @return string
+     */
+    protected function renderLinkingAnalysis($results)
+    {
+        $html = '<div class="panel">';
+        $html .= '<h3><i class="icon-link"></i> ' . $this->l('Internal Linking Analysis') . '</h3>';
+
+        // Stats
+        $html .= '<div class="row" style="margin-bottom:20px;">';
+
+        $html .= '<div class="col-lg-3 col-md-6">';
+        $html .= '<div class="panel" style="background:#3c8dbc;color:#fff;text-align:center;padding:15px;">';
+        $html .= '<h3 style="margin:0;">' . $results['stats']['total_products'] . '</h3>';
+        $html .= '<p style="margin:5px 0 0;">' . $this->l('Total Products') . '</p>';
+        $html .= '</div></div>';
+
+        $html .= '<div class="col-lg-3 col-md-6">';
+        $orphanColor = $results['stats']['orphan_count'] > 0 ? '#dd4b39' : '#00a65a';
+        $html .= '<div class="panel" style="background:' . $orphanColor . ';color:#fff;text-align:center;padding:15px;">';
+        $html .= '<h3 style="margin:0;">' . $results['stats']['orphan_count'] . '</h3>';
+        $html .= '<p style="margin:5px 0 0;">' . $this->l('Orphan Products') . '</p>';
+        $html .= '</div></div>';
+
+        $html .= '<div class="col-lg-3 col-md-6">';
+        $html .= '<div class="panel" style="background:#f39c12;color:#fff;text-align:center;padding:15px;">';
+        $html .= '<h3 style="margin:0;">' . $results['stats']['low_link_count'] . '</h3>';
+        $html .= '<p style="margin:5px 0 0;">' . $this->l('Low Link Products') . '</p>';
+        $html .= '</div></div>';
+
+        $html .= '<div class="col-lg-3 col-md-6">';
+        $html .= '<div class="panel" style="background:#605ca8;color:#fff;text-align:center;padding:15px;">';
+        $html .= '<h3 style="margin:0;">' . $results['stats']['avg_internal_links'] . '</h3>';
+        $html .= '<p style="margin:5px 0 0;">' . $this->l('Avg Links/Product') . '</p>';
+        $html .= '</div></div>';
+
+        $html .= '</div>';
+
+        // Suggestions
+        if (!empty($results['suggestions'])) {
+            $html .= '<h4><i class="icon-lightbulb-o"></i> ' . $this->l('Suggestions') . '</h4>';
+            foreach ($results['suggestions'] as $suggestion) {
+                $bgColor = $suggestion['priority'] === 'high' ? '#dd4b39' : ($suggestion['priority'] === 'medium' ? '#f39c12' : '#00a65a');
+                $html .= '<div class="alert" style="background:' . $bgColor . ';color:#fff;border:none;">';
+                $html .= '<strong>' . htmlspecialchars($suggestion['title']) . '</strong><br>';
+                $html .= htmlspecialchars($suggestion['description']) . '<br>';
+                $html .= '<em>' . $this->l('Action') . ': ' . htmlspecialchars($suggestion['action']) . '</em>';
+                $html .= '</div>';
+            }
+        }
+
+        // Orphan products (first 10)
+        if (!empty($results['orphan_products'])) {
+            $html .= '<h4><i class="icon-unlink"></i> ' . $this->l('Orphan Products (no internal links)') . '</h4>';
+            $html .= '<table class="table table-striped">';
+            $html .= '<thead><tr><th>ID</th><th>' . $this->l('Product') . '</th><th>' . $this->l('Action') . '</th></tr></thead>';
+            $html .= '<tbody>';
+            foreach (array_slice($results['orphan_products'], 0, 10) as $product) {
+                $editUrl = $this->context->link->getAdminLink('AdminProducts') . '&id_product=' . $product['id'] . '&updateproduct';
+                $html .= '<tr>';
+                $html .= '<td>' . $product['id'] . '</td>';
+                $html .= '<td>' . htmlspecialchars($product['name']) . '</td>';
+                $html .= '<td><a href="' . $editUrl . '" target="_blank" class="btn btn-xs btn-primary"><i class="icon-pencil"></i> ' . $this->l('Edit') . '</a></td>';
+                $html .= '</tr>';
+            }
+            $html .= '</tbody></table>';
+            if (count($results['orphan_products']) > 10) {
+                $html .= '<p class="text-muted">' . sprintf($this->l('Showing 10 of %d orphan products'), count($results['orphan_products'])) . '</p>';
+            }
+        }
+
+        // Top linked products
+        if (!empty($results['top_linked_products'])) {
+            $html .= '<h4><i class="icon-star"></i> ' . $this->l('Top Linked Products') . '</h4>';
+            $html .= '<table class="table table-striped">';
+            $html .= '<thead><tr><th>ID</th><th>' . $this->l('Product') . '</th><th>' . $this->l('Links') . '</th></tr></thead>';
+            $html .= '<tbody>';
+            foreach ($results['top_linked_products'] as $product) {
+                $html .= '<tr>';
+                $html .= '<td>' . $product['id'] . '</td>';
+                $html .= '<td>' . htmlspecialchars($product['name']) . '</td>';
+                $html .= '<td><span class="badge" style="background:#00a65a;">' . $product['link_count'] . '</span></td>';
+                $html .= '</tr>';
+            }
+            $html .= '</tbody></table>';
+        }
+
+        $html .= '</div>';
+
+        return $html;
+    }
+
+    /**
+     * Render schema tester section
+     * @return string
+     */
+    protected function renderSchemaTester()
+    {
+        $html = '<div class="panel">';
+        $html .= '<h3><i class="icon-code"></i> ' . $this->l('Structured Data Tester') . '</h3>';
+
+        $html .= '<div class="alert alert-info">';
+        $html .= '<i class="icon-info-circle"></i> ' . $this->l('Test your product schemas before publishing. Validate JSON-LD and get links to Google\'s testing tools.');
+        $html .= '</div>';
+
+        // Test single product
+        $html .= '<div class="panel" style="background:#f9f9f9;">';
+        $html .= '<h4><i class="icon-search"></i> ' . $this->l('Test Single Product') . '</h4>';
+        $html .= '<form method="post" class="form-inline">';
+        $html .= '<div class="form-group">';
+        $html .= '<label class="control-label">' . $this->l('Product ID') . ': </label> ';
+        $html .= '<input type="number" name="schema_product_id" class="form-control" placeholder="123" style="width:100px;"> ';
+        $html .= '<button type="submit" name="testProductSchema" class="btn btn-primary">';
+        $html .= '<i class="icon-search"></i> ' . $this->l('Test Schema');
+        $html .= '</button>';
+        $html .= '</div>';
+        $html .= '</form>';
+        $html .= '</div>';
+
+        // Audit all
+        $html .= '<div class="row" style="margin-top:20px;">';
+
+        $html .= '<div class="col-lg-6">';
+        $html .= '<form method="post">';
+        $html .= '<button type="submit" name="auditAllSchemas" class="btn btn-warning btn-lg btn-block">';
+        $html .= '<i class="icon-tasks"></i> ' . $this->l('Audit All Product Schemas');
+        $html .= '</button>';
+        $html .= '<p class="text-muted text-center" style="margin-top:5px;">' . $this->l('Check first 100 products for schema issues') . '</p>';
+        $html .= '</form>';
+        $html .= '</div>';
+
+        $html .= '<div class="col-lg-6">';
+        $html .= '<form method="post">';
+        $html .= '<button type="submit" name="analyzeLinking" class="btn btn-info btn-lg btn-block">';
+        $html .= '<i class="icon-link"></i> ' . $this->l('Analyze Internal Linking');
+        $html .= '</button>';
+        $html .= '<p class="text-muted text-center" style="margin-top:5px;">' . $this->l('Find orphan products and linking opportunities') . '</p>';
+        $html .= '</form>';
+        $html .= '</div>';
+
+        $html .= '</div>';
+
+        // External tools
+        $html .= '<hr>';
+        $html .= '<h5>' . $this->l('External Testing Tools') . ':</h5>';
+        $html .= '<ul>';
+        $html .= '<li><a href="https://search.google.com/test/rich-results" target="_blank">' . $this->l('Google Rich Results Test') . '</a> - ' . $this->l('Test any URL for rich results eligibility') . '</li>';
+        $html .= '<li><a href="https://validator.schema.org/" target="_blank">' . $this->l('Schema.org Validator') . '</a> - ' . $this->l('Validate JSON-LD syntax and structure') . '</li>';
+        $html .= '<li><a href="https://developers.facebook.com/tools/debug/" target="_blank">' . $this->l('Facebook Debugger') . '</a> - ' . $this->l('Test Open Graph tags') . '</li>';
+        $html .= '<li><a href="https://cards-dev.twitter.com/validator" target="_blank">' . $this->l('Twitter Card Validator') . '</a> - ' . $this->l('Test Twitter Cards') . '</li>';
+        $html .= '</ul>';
+
+        $html .= '</div>';
+
+        return $html;
+    }
+
+    /**
+     * Export SEO data action
+     */
+    protected function exportSeoDataAction()
+    {
+        $bulkEditor = new ProSEOMasterBulkEditor();
+        $csv = $bulkEditor->exportSeoData($this->context->language->id);
+
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename="seo_data_' . date('Y-m-d') . '.csv"');
+        header('Pragma: no-cache');
+        header('Expires: 0');
+
+        echo "\xEF\xBB\xBF"; // UTF-8 BOM for Excel
+        echo $csv;
+        exit;
+    }
+
+    /**
+     * Import SEO data action
+     * @return string
+     */
+    protected function importSeoDataAction()
+    {
+        if (!isset($_FILES['seo_import_csv']) || $_FILES['seo_import_csv']['error'] !== UPLOAD_ERR_OK) {
+            return $this->displayError($this->l('Please upload a valid CSV file.'));
+        }
+
+        $csvContent = file_get_contents($_FILES['seo_import_csv']['tmp_name']);
+        $bulkEditor = new ProSEOMasterBulkEditor();
+        $results = $bulkEditor->importFromCsv($csvContent, $this->context->language->id);
+
+        $message = sprintf(
+            $this->l('Import completed: %d products updated, %d categories updated, %d errors.'),
+            $results['products_updated'],
+            $results['categories_updated'],
+            $results['errors']
+        );
+
+        if ($results['errors'] > 0) {
+            return $this->displayWarning($message);
+        }
+
+        return $this->displayConfirmation($message);
+    }
+
+    /**
+     * Render Bulk Editor section
+     * @return string
+     */
+    protected function renderBulkEditor()
+    {
+        $bulkEditor = new ProSEOMasterBulkEditor();
+        $summary = $bulkEditor->getSeoSummary($this->context->language->id);
+
+        $html = '<div class="panel">';
+        $html .= '<h3><i class="icon-edit"></i> ' . $this->l('SEO Data Manager') . '</h3>';
+
+        $html .= '<div class="alert alert-info">';
+        $html .= '<i class="icon-info-circle"></i> ' . $this->l('Export all your SEO data (meta titles, descriptions) to CSV, edit in Excel/Sheets, and import back. Perfect for bulk SEO optimization.');
+        $html .= '</div>';
+
+        // Summary Stats
+        $html .= '<div class="row" style="margin-bottom:20px;">';
+
+        // Products stats
+        $html .= '<div class="col-lg-6">';
+        $html .= '<div class="panel" style="background:#f9f9f9;">';
+        $html .= '<h4><i class="icon-tag"></i> ' . $this->l('Products') . '</h4>';
+        $html .= '<table class="table">';
+        $html .= '<tr><td>' . $this->l('Total Products') . '</td><td><strong>' . $summary['products']['total'] . '</strong></td></tr>';
+        $html .= '<tr><td><span style="color:#dd4b39;">' . $this->l('Missing Meta Title') . '</span></td><td><strong>' . $summary['products']['missing_title'] . '</strong></td></tr>';
+        $html .= '<tr><td><span style="color:#f39c12;">' . $this->l('Missing Meta Description') . '</span></td><td><strong>' . $summary['products']['missing_description'] . '</strong></td></tr>';
+        $html .= '</table>';
+        $html .= '</div></div>';
+
+        // Categories stats
+        $html .= '<div class="col-lg-6">';
+        $html .= '<div class="panel" style="background:#f9f9f9;">';
+        $html .= '<h4><i class="icon-folder"></i> ' . $this->l('Categories') . '</h4>';
+        $html .= '<table class="table">';
+        $html .= '<tr><td>' . $this->l('Total Categories') . '</td><td><strong>' . $summary['categories']['total'] . '</strong></td></tr>';
+        $html .= '<tr><td><span style="color:#dd4b39;">' . $this->l('Missing Meta Title') . '</span></td><td><strong>' . $summary['categories']['missing_title'] . '</strong></td></tr>';
+        $html .= '<tr><td><span style="color:#f39c12;">' . $this->l('Missing Meta Description') . '</span></td><td><strong>' . $summary['categories']['missing_description'] . '</strong></td></tr>';
+        $html .= '</table>';
+        $html .= '</div></div>';
+
+        $html .= '</div>';
+
+        // Export/Import buttons
+        $html .= '<div class="row" style="margin-top:20px;">';
+
+        $html .= '<div class="col-lg-6">';
+        $html .= '<div class="panel" style="background:#e8f4e8;border:1px solid #00a65a;">';
+        $html .= '<h4><i class="icon-download"></i> ' . $this->l('Export SEO Data') . '</h4>';
+        $html .= '<p>' . $this->l('Download all products, categories, and CMS pages with their meta tags in CSV format.') . '</p>';
+        $html .= '<form method="post">';
+        $html .= '<button type="submit" name="exportSeoData" class="btn btn-success btn-lg">';
+        $html .= '<i class="icon-download"></i> ' . $this->l('Export to CSV');
+        $html .= '</button>';
+        $html .= '</form>';
+        $html .= '</div></div>';
+
+        $html .= '<div class="col-lg-6">';
+        $html .= '<div class="panel" style="background:#e8f0f4;border:1px solid #3c8dbc;">';
+        $html .= '<h4><i class="icon-upload"></i> ' . $this->l('Import SEO Data') . '</h4>';
+        $html .= '<p>' . $this->l('Upload a CSV file to bulk update meta tags. Use the same format as the export.') . '</p>';
+        $html .= '<form method="post" enctype="multipart/form-data">';
+        $html .= '<div class="form-group">';
+        $html .= '<input type="file" name="seo_import_csv" class="form-control" accept=".csv" required>';
+        $html .= '</div>';
+        $html .= '<button type="submit" name="importSeoData" class="btn btn-info btn-lg">';
+        $html .= '<i class="icon-upload"></i> ' . $this->l('Import from CSV');
+        $html .= '</button>';
+        $html .= '</form>';
+        $html .= '</div></div>';
+
+        $html .= '</div>';
+
+        // Instructions
+        $html .= '<hr>';
+        $html .= '<h5>' . $this->l('How to use') . ':</h5>';
+        $html .= '<ol>';
+        $html .= '<li>' . $this->l('Click "Export to CSV" to download all your SEO data') . '</li>';
+        $html .= '<li>' . $this->l('Open the CSV in Excel or Google Sheets') . '</li>';
+        $html .= '<li>' . $this->l('Edit the "Meta Title" and "Meta Description" columns') . '</li>';
+        $html .= '<li>' . $this->l('Ideal lengths: Title 30-60 chars, Description 70-160 chars') . '</li>';
+        $html .= '<li>' . $this->l('Save as CSV and upload using "Import from CSV"') . '</li>';
+        $html .= '</ol>';
+
+        $html .= '<div class="alert alert-warning">';
+        $html .= '<i class="icon-warning"></i> <strong>' . $this->l('Tip') . ':</strong> ';
+        $html .= $this->l('Always export first to have the correct format. Only modify the Meta Title and Meta Description columns.');
+        $html .= '</div>';
+
+        $html .= '</div>';
+
+        return $html;
     }
 }

@@ -53,6 +53,7 @@ class ProSEOMasterSitemap
         $this->generateManufacturerSitemap();
         $this->generateSupplierSitemap();
         $this->generatePagesSitemap();
+        $this->generateVideoSitemap();
 
         // Generate sitemap index
         $this->generateSitemapIndex();
@@ -324,13 +325,17 @@ class ProSEOMasterSitemap
     /**
      * Initialize sitemap XML structure
      * @param bool $includeImage
+     * @param bool $includeVideo
      * @return SimpleXMLElement
      */
-    protected function initSitemapXml($includeImage = false)
+    protected function initSitemapXml($includeImage = false, $includeVideo = false)
     {
         $namespaces = 'xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"';
         if ($includeImage) {
             $namespaces .= ' xmlns:image="http://www.google.com/schemas/sitemap-image/1.1"';
+        }
+        if ($includeVideo) {
+            $namespaces .= ' xmlns:video="http://www.google.com/schemas/sitemap-video/1.1"';
         }
 
         return new SimpleXMLElement('<?xml version="1.0" encoding="UTF-8"?><urlset ' . $namespaces . '></urlset>');
@@ -511,6 +516,191 @@ class ProSEOMasterSitemap
         } else {
             return 'yearly';
         }
+    }
+
+    /**
+     * Generate video sitemap for products with embedded videos
+     */
+    public function generateVideoSitemap()
+    {
+        $languages = Language::getLanguages(true, $this->context->shop->id);
+        $link = $this->context->link;
+
+        foreach ($languages as $lang) {
+            $idLang = (int) $lang['id_lang'];
+            $langIso = $lang['iso_code'];
+
+            $productsWithVideos = $this->getProductsWithVideos($idLang);
+
+            if (empty($productsWithVideos)) {
+                continue;
+            }
+
+            $xml = $this->initSitemapXml(false, true);
+
+            foreach ($productsWithVideos as $product) {
+                $url = $link->getProductLink(
+                    (int) $product['id_product'],
+                    $product['link_rewrite'],
+                    null,
+                    null,
+                    $idLang
+                );
+
+                $videos = $this->extractVideosFromContent($product['description']);
+
+                foreach ($videos as $video) {
+                    $urlNode = $xml->addChild('url');
+                    $urlNode->addChild('loc', htmlspecialchars($url));
+
+                    $videoNode = $urlNode->addChild('video:video', null, 'http://www.google.com/schemas/sitemap-video/1.1');
+
+                    // Required fields
+                    $videoNode->addChild('video:thumbnail_loc', htmlspecialchars($video['thumbnail']), 'http://www.google.com/schemas/sitemap-video/1.1');
+                    $videoNode->addChild('video:title', htmlspecialchars($product['name']), 'http://www.google.com/schemas/sitemap-video/1.1');
+                    $videoNode->addChild('video:description', htmlspecialchars(strip_tags($product['description_short'])), 'http://www.google.com/schemas/sitemap-video/1.1');
+
+                    // Content location (player or raw video)
+                    if (!empty($video['content_loc'])) {
+                        $videoNode->addChild('video:content_loc', htmlspecialchars($video['content_loc']), 'http://www.google.com/schemas/sitemap-video/1.1');
+                    }
+
+                    if (!empty($video['player_loc'])) {
+                        $videoNode->addChild('video:player_loc', htmlspecialchars($video['player_loc']), 'http://www.google.com/schemas/sitemap-video/1.1');
+                    }
+
+                    // Optional but recommended fields
+                    if (!empty($video['duration'])) {
+                        $videoNode->addChild('video:duration', (int) $video['duration'], 'http://www.google.com/schemas/sitemap-video/1.1');
+                    }
+
+                    $videoNode->addChild('video:publication_date', date('Y-m-d', strtotime($product['date_add'])), 'http://www.google.com/schemas/sitemap-video/1.1');
+                    $videoNode->addChild('video:family_friendly', 'yes', 'http://www.google.com/schemas/sitemap-video/1.1');
+                    $videoNode->addChild('video:live', 'no', 'http://www.google.com/schemas/sitemap-video/1.1');
+
+                    // Platform availability
+                    $platform = $videoNode->addChild('video:platform', 'web mobile tv', 'http://www.google.com/schemas/sitemap-video/1.1');
+                    $platform->addAttribute('relationship', 'allow');
+                }
+            }
+
+            if (count($productsWithVideos) > 0) {
+                $filename = 'sitemap_videos_' . $langIso . '.xml';
+                $this->saveSitemap($xml, $filename);
+            }
+        }
+    }
+
+    /**
+     * Get products that have videos in their descriptions
+     * @param int $idLang
+     * @return array
+     */
+    protected function getProductsWithVideos($idLang)
+    {
+        $sql = new DbQuery();
+        $sql->select('p.id_product, pl.name, pl.link_rewrite, pl.description, pl.description_short, p.date_add');
+        $sql->from('product', 'p');
+        $sql->innerJoin('product_lang', 'pl', 'p.id_product = pl.id_product AND pl.id_lang = ' . (int) $idLang);
+        $sql->innerJoin('product_shop', 'ps', 'p.id_product = ps.id_product AND ps.id_shop = ' . (int) $this->context->shop->id);
+        $sql->where('ps.active = 1');
+        $sql->where('(pl.description LIKE "%youtube%" OR pl.description LIKE "%vimeo%" OR pl.description LIKE "%<video%" OR pl.description LIKE "%dailymotion%" OR pl.description LIKE "%wistia%")');
+
+        return Db::getInstance(_PS_USE_SQL_SLAVE_)->executeS($sql);
+    }
+
+    /**
+     * Extract video information from HTML content
+     * @param string $content
+     * @return array
+     */
+    protected function extractVideosFromContent($content)
+    {
+        $videos = array();
+
+        // YouTube embeds (iframe and old embed)
+        preg_match_all('/(?:youtube\.com\/(?:embed\/|watch\?v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/', $content, $ytMatches);
+        if (!empty($ytMatches[1])) {
+            foreach (array_unique($ytMatches[1]) as $videoId) {
+                $videos[] = array(
+                    'platform' => 'youtube',
+                    'video_id' => $videoId,
+                    'thumbnail' => 'https://img.youtube.com/vi/' . $videoId . '/maxresdefault.jpg',
+                    'player_loc' => 'https://www.youtube.com/embed/' . $videoId,
+                    'content_loc' => '',
+                    'duration' => null,
+                );
+            }
+        }
+
+        // Vimeo embeds
+        preg_match_all('/vimeo\.com\/(?:video\/)?(\d+)/', $content, $vimeoMatches);
+        if (!empty($vimeoMatches[1])) {
+            foreach (array_unique($vimeoMatches[1]) as $videoId) {
+                $videos[] = array(
+                    'platform' => 'vimeo',
+                    'video_id' => $videoId,
+                    'thumbnail' => 'https://vumbnail.com/' . $videoId . '.jpg',
+                    'player_loc' => 'https://player.vimeo.com/video/' . $videoId,
+                    'content_loc' => '',
+                    'duration' => null,
+                );
+            }
+        }
+
+        // Dailymotion embeds
+        preg_match_all('/dailymotion\.com\/(?:video|embed\/video)\/([a-zA-Z0-9]+)/', $content, $dmMatches);
+        if (!empty($dmMatches[1])) {
+            foreach (array_unique($dmMatches[1]) as $videoId) {
+                $videos[] = array(
+                    'platform' => 'dailymotion',
+                    'video_id' => $videoId,
+                    'thumbnail' => 'https://www.dailymotion.com/thumbnail/video/' . $videoId,
+                    'player_loc' => 'https://www.dailymotion.com/embed/video/' . $videoId,
+                    'content_loc' => '',
+                    'duration' => null,
+                );
+            }
+        }
+
+        // Wistia embeds
+        preg_match_all('/wistia\.(?:com|net)\/(?:medias|embed)\/([a-zA-Z0-9]+)/', $content, $wistiaMatches);
+        if (!empty($wistiaMatches[1])) {
+            foreach (array_unique($wistiaMatches[1]) as $videoId) {
+                $videos[] = array(
+                    'platform' => 'wistia',
+                    'video_id' => $videoId,
+                    'thumbnail' => 'https://embed-ssl.wistia.com/deliveries/' . $videoId . '.jpg',
+                    'player_loc' => 'https://fast.wistia.net/embed/iframe/' . $videoId,
+                    'content_loc' => '',
+                    'duration' => null,
+                );
+            }
+        }
+
+        // Self-hosted videos (<video> tags)
+        preg_match_all('/<video[^>]*>.*?<source[^>]+src=["\']([^"\']+)["\'][^>]*>.*?<\/video>/is', $content, $html5Matches);
+        if (!empty($html5Matches[1])) {
+            foreach (array_unique($html5Matches[1]) as $videoUrl) {
+                // Try to get poster/thumbnail from video tag
+                $thumbnail = '';
+                preg_match('/poster=["\']([^"\']+)["\']/', $content, $posterMatch);
+                if (!empty($posterMatch[1])) {
+                    $thumbnail = $posterMatch[1];
+                }
+
+                $videos[] = array(
+                    'platform' => 'self-hosted',
+                    'video_id' => md5($videoUrl),
+                    'thumbnail' => $thumbnail ?: $this->context->link->getBaseLink() . 'img/video-placeholder.jpg',
+                    'player_loc' => '',
+                    'content_loc' => $videoUrl,
+                    'duration' => null,
+                );
+            }
+        }
+
+        return $videos;
     }
 
     /**
