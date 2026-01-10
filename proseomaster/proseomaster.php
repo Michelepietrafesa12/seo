@@ -5,7 +5,7 @@
  * @author      SEO Expert
  * @copyright   2024
  * @license     MIT
- * @version     2.3.1
+ * @version     2.4.0
  */
 
 if (!defined('_PS_VERSION_')) {
@@ -84,13 +84,15 @@ class ProSEOMaster extends Module
         'PROSEOMASTER_ENABLE_AI_SEO',
         'PROSEOMASTER_ENABLE_LLMS_TXT',
         'PROSEOMASTER_ENABLE_AI_META_TAGS',
+        // Cron
+        'PROSEOMASTER_CRON_TOKEN',
     );
 
     public function __construct()
     {
         $this->name = 'proseomaster';
         $this->tab = 'seo';
-        $this->version = '2.3.1';
+        $this->version = '2.4.0';
         $this->author = 'SEO Expert';
         $this->need_instance = 0;
         $this->bootstrap = true;
@@ -149,6 +151,8 @@ class ProSEOMaster extends Module
             'PROSEOMASTER_ENABLE_AI_SEO' => 1,
             'PROSEOMASTER_ENABLE_LLMS_TXT' => 1,
             'PROSEOMASTER_ENABLE_AI_META_TAGS' => 1,
+            // Cron token (generate unique token)
+            'PROSEOMASTER_CRON_TOKEN' => $this->generateCronToken(),
         );
 
         foreach ($defaultConfig as $key => $value) {
@@ -210,6 +214,15 @@ class ProSEOMaster extends Module
     }
 
     /**
+     * Generate unique cron token
+     * @return string
+     */
+    protected function generateCronToken()
+    {
+        return bin2hex(random_bytes(16));
+    }
+
+    /**
      * Module configuration page
      * @return string
      */
@@ -242,8 +255,24 @@ class ProSEOMaster extends Module
             $output .= $this->generateHtaccessAction();
         }
 
+        // Handle cron token regeneration
+        if (Tools::isSubmit('regenerateCronToken')) {
+            $output .= $this->regenerateCronTokenAction();
+        }
+
         // Render dashboard + forms
         return $output . $this->renderDashboard() . $this->renderForm() . $this->renderAdvancedForm();
+    }
+
+    /**
+     * Regenerate cron token action
+     * @return string
+     */
+    protected function regenerateCronTokenAction()
+    {
+        $newToken = $this->generateCronToken();
+        Configuration::updateValue('PROSEOMASTER_CRON_TOKEN', $newToken);
+        return $this->displayConfirmation($this->l('Cron security token has been regenerated. Update your cron job with the new URL.'));
     }
 
     /**
@@ -308,6 +337,141 @@ class ProSEOMaster extends Module
         $html .= '</button></form>';
 
         $html .= '</div></div>';
+        $html .= '</div>';
+
+        // Sitemap & Cron Section
+        $html .= $this->renderSitemapSection();
+
+        return $html;
+    }
+
+    /**
+     * Render Sitemap & Cron Job section
+     * @return string
+     */
+    protected function renderSitemapSection()
+    {
+        $shopUrl = $this->context->link->getPageLink('index', true);
+        $sitemapUrl = $shopUrl . 'sitemap.xml';
+        $sitemapDate = Configuration::get('PROSEOMASTER_SITEMAP_LAST_GENERATED');
+        $cronToken = Configuration::get('PROSEOMASTER_CRON_TOKEN');
+
+        // Generate token if not exists
+        if (empty($cronToken)) {
+            $cronToken = $this->generateCronToken();
+            Configuration::updateValue('PROSEOMASTER_CRON_TOKEN', $cronToken);
+        }
+
+        $cronUrl = $shopUrl . 'module/proseomaster/cron?action=sitemap&token=' . $cronToken;
+
+        $html = '<div class="panel">';
+        $html .= '<h3><i class="icon-sitemap"></i> ' . $this->l('Sitemap & Cron Job') . '</h3>';
+
+        // Sitemap Links
+        $html .= '<div class="row">';
+        $html .= '<div class="col-lg-6">';
+        $html .= '<div class="form-group">';
+        $html .= '<label class="control-label"><strong>' . $this->l('Sitemap URL') . ':</strong></label>';
+        $html .= '<div class="input-group">';
+        $html .= '<input type="text" class="form-control" value="' . $sitemapUrl . '" readonly onclick="this.select()">';
+        $html .= '<span class="input-group-btn">';
+        $html .= '<a href="' . $sitemapUrl . '" target="_blank" class="btn btn-default" title="' . $this->l('Open Sitemap') . '"><i class="icon-external-link"></i></a>';
+        $html .= '</span>';
+        $html .= '</div>';
+        $html .= '<p class="help-block">' . $this->l('Submit this URL to Google Search Console and Bing Webmaster Tools.') . '</p>';
+        $html .= '</div>';
+        $html .= '</div>';
+
+        $html .= '<div class="col-lg-6">';
+        $html .= '<div class="form-group">';
+        $html .= '<label class="control-label"><strong>' . $this->l('Last Generated') . ':</strong></label>';
+        $html .= '<p class="form-control-static">';
+        if ($sitemapDate) {
+            $html .= '<span class="badge badge-success" style="background:#00a65a;font-size:12px;">' . date('d/m/Y H:i:s', strtotime($sitemapDate)) . '</span>';
+        } else {
+            $html .= '<span class="badge badge-warning" style="background:#f39c12;font-size:12px;">' . $this->l('Never generated') . '</span>';
+        }
+        $html .= '</p>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
+
+        // Cron Job Section
+        $html .= '<hr>';
+        $html .= '<h4><i class="icon-time"></i> ' . $this->l('Automatic Sitemap Generation (Cron Job)') . '</h4>';
+        $html .= '<div class="alert alert-info">';
+        $html .= '<p><strong>' . $this->l('Use this URL to automatically regenerate the sitemap via cron job:') . '</strong></p>';
+        $html .= '</div>';
+
+        $html .= '<div class="form-group">';
+        $html .= '<label class="control-label"><strong>' . $this->l('Cron URL') . ':</strong></label>';
+        $html .= '<div class="input-group">';
+        $html .= '<input type="text" class="form-control" id="cronUrl" value="' . htmlspecialchars($cronUrl) . '" readonly onclick="this.select()">';
+        $html .= '<span class="input-group-btn">';
+        $html .= '<button type="button" class="btn btn-default" onclick="copyToClipboard(\'cronUrl\')" title="' . $this->l('Copy to clipboard') . '"><i class="icon-copy"></i></button>';
+        $html .= '</span>';
+        $html .= '</div>';
+        $html .= '</div>';
+
+        // Cron examples
+        $html .= '<div class="row" style="margin-top:15px;">';
+        $html .= '<div class="col-lg-6">';
+        $html .= '<div class="panel" style="background:#f9f9f9;">';
+        $html .= '<h5><i class="icon-linux"></i> ' . $this->l('Linux Crontab Example') . ':</h5>';
+        $html .= '<pre style="background:#333;color:#0f0;padding:10px;font-size:11px;overflow-x:auto;">';
+        $html .= '# ' . $this->l('Daily at 3:00 AM') . "\n";
+        $html .= '0 3 * * * curl -s "' . $cronUrl . '" > /dev/null 2>&1' . "\n\n";
+        $html .= '# ' . $this->l('Every 6 hours') . "\n";
+        $html .= '0 */6 * * * wget -q -O - "' . $cronUrl . '" > /dev/null 2>&1';
+        $html .= '</pre>';
+        $html .= '</div>';
+        $html .= '</div>';
+
+        $html .= '<div class="col-lg-6">';
+        $html .= '<div class="panel" style="background:#f9f9f9;">';
+        $html .= '<h5><i class="icon-cogs"></i> ' . $this->l('cPanel Cron Job') . ':</h5>';
+        $html .= '<ol style="padding-left:20px;">';
+        $html .= '<li>' . $this->l('Go to cPanel > Cron Jobs') . '</li>';
+        $html .= '<li>' . $this->l('Set schedule (e.g., Once Per Day)') . '</li>';
+        $html .= '<li>' . $this->l('Command:') . '</li>';
+        $html .= '</ol>';
+        $html .= '<pre style="background:#333;color:#0f0;padding:10px;font-size:11px;overflow-x:auto;">';
+        $html .= '/usr/bin/curl -s "' . $cronUrl . '"';
+        $html .= '</pre>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
+
+        // Security token management
+        $html .= '<hr>';
+        $html .= '<div class="row">';
+        $html .= '<div class="col-lg-6">';
+        $html .= '<form method="post">';
+        $html .= '<button type="submit" name="regenerateCronToken" class="btn btn-warning">';
+        $html .= '<i class="icon-refresh"></i> ' . $this->l('Regenerate Security Token');
+        $html .= '</button>';
+        $html .= '<p class="help-block">' . $this->l('Generate a new token if the current one has been compromised.') . '</p>';
+        $html .= '</form>';
+        $html .= '</div>';
+        $html .= '<div class="col-lg-6">';
+        $html .= '<div class="form-group">';
+        $html .= '<label class="control-label"><strong>' . $this->l('Current Token') . ':</strong></label>';
+        $html .= '<input type="text" class="form-control" value="' . $cronToken . '" readonly style="font-family:monospace;">';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
+
+        // JavaScript for copy to clipboard
+        $html .= '<script>
+        function copyToClipboard(elementId) {
+            var copyText = document.getElementById(elementId);
+            copyText.select();
+            copyText.setSelectionRange(0, 99999);
+            document.execCommand("copy");
+            alert("' . $this->l('Copied to clipboard!') . '");
+        }
+        </script>';
+
         $html .= '</div>';
 
         return $html;
