@@ -303,11 +303,16 @@ class ProSEOMasterSchemaValidator
 
     /**
      * Get test URLs for structured data validators
-     * @param string $pageUrl
+     * @param string|null $pageUrl If null, uses shop home URL
      * @return array
      */
-    public function getTestUrls($pageUrl)
+    public function getTestUrls($pageUrl = null)
     {
+        // Default to shop home URL if not provided
+        if ($pageUrl === null) {
+            $pageUrl = $this->context->link->getPageLink('index', true);
+        }
+
         $encodedUrl = urlencode($pageUrl);
 
         return array(

@@ -881,4 +881,151 @@ class ProSEOMasterAudit
 
         return array_unique($suggestions);
     }
+
+    /**
+     * Calculate SEO score for dashboard (public wrapper)
+     * @param int $idLang
+     * @param int $idShop
+     * @return int
+     */
+    public function calculateSeoScore($idLang = null, $idShop = null)
+    {
+        // Run a quick audit to populate issueCounts
+        $this->runQuickAudit($idLang, $idShop);
+
+        $score = 100;
+        $score -= $this->issueCounts['critical'] * 15;
+        $score -= $this->issueCounts['warning'] * 5;
+        $score -= $this->issueCounts['notice'] * 2;
+
+        return max(0, min(100, $score));
+    }
+
+    /**
+     * Run quick audit for score calculation
+     * @param int|null $idLang
+     * @param int|null $idShop
+     */
+    protected function runQuickAudit($idLang = null, $idShop = null)
+    {
+        $this->issueCounts = array('critical' => 0, 'warning' => 0, 'notice' => 0, 'passed' => 0);
+
+        $idLang = $idLang ?: (int) $this->context->language->id;
+        $idShop = $idShop ?: (int) $this->context->shop->id;
+
+        // Count products without meta
+        $productsWithoutMeta = $this->getProductsWithoutMeta($idLang, $idShop);
+        if (count($productsWithoutMeta) > 0) {
+            $this->issueCounts['warning']++;
+        }
+
+        // Count categories without meta
+        $categoriesWithoutMeta = $this->getCategoriesWithoutMeta($idLang, $idShop);
+        if (count($categoriesWithoutMeta) > 0) {
+            $this->issueCounts['warning']++;
+        }
+
+        // Check duplicates
+        $duplicateTitles = $this->getDuplicateTitles($idLang, $idShop);
+        if (count($duplicateTitles) > 0) {
+            $this->issueCounts['warning']++;
+        }
+
+        $duplicateDescriptions = $this->getDuplicateDescriptions($idLang, $idShop);
+        if (count($duplicateDescriptions) > 0) {
+            $this->issueCounts['notice']++;
+        }
+
+        // Check technical SEO
+        if (!file_exists(_PS_ROOT_DIR_ . '/robots.txt')) {
+            $this->issueCounts['critical']++;
+        }
+        if (!file_exists(_PS_ROOT_DIR_ . '/sitemap.xml')) {
+            $this->issueCounts['critical']++;
+        }
+        if (!Configuration::get('PS_SSL_ENABLED')) {
+            $this->issueCounts['critical']++;
+        }
+    }
+
+    /**
+     * Get products without meta tags
+     * @param int $idLang
+     * @param int $idShop
+     * @return array
+     */
+    public function getProductsWithoutMeta($idLang, $idShop)
+    {
+        $sql = new DbQuery();
+        $sql->select('p.id_product, pl.name');
+        $sql->from('product', 'p');
+        $sql->innerJoin('product_lang', 'pl', 'p.id_product = pl.id_product AND pl.id_lang = ' . (int) $idLang . ' AND pl.id_shop = ' . (int) $idShop);
+        $sql->innerJoin('product_shop', 'ps', 'p.id_product = ps.id_product AND ps.id_shop = ' . (int) $idShop);
+        $sql->where('ps.active = 1');
+        $sql->where('(pl.meta_title IS NULL OR pl.meta_title = "" OR pl.meta_description IS NULL OR pl.meta_description = "")');
+
+        return Db::getInstance()->executeS($sql);
+    }
+
+    /**
+     * Get categories without meta tags
+     * @param int $idLang
+     * @param int $idShop
+     * @return array
+     */
+    public function getCategoriesWithoutMeta($idLang, $idShop)
+    {
+        $sql = new DbQuery();
+        $sql->select('c.id_category, cl.name');
+        $sql->from('category', 'c');
+        $sql->innerJoin('category_lang', 'cl', 'c.id_category = cl.id_category AND cl.id_lang = ' . (int) $idLang . ' AND cl.id_shop = ' . (int) $idShop);
+        $sql->innerJoin('category_shop', 'cs', 'c.id_category = cs.id_category AND cs.id_shop = ' . (int) $idShop);
+        $sql->where('c.active = 1');
+        $sql->where('c.id_category > 2');
+        $sql->where('(cl.meta_title IS NULL OR cl.meta_title = "" OR cl.meta_description IS NULL OR cl.meta_description = "")');
+
+        return Db::getInstance()->executeS($sql);
+    }
+
+    /**
+     * Get duplicate meta titles
+     * @param int $idLang
+     * @param int $idShop
+     * @return array
+     */
+    public function getDuplicateTitles($idLang, $idShop)
+    {
+        $sql = 'SELECT pl.meta_title, COUNT(*) as cnt, GROUP_CONCAT(p.id_product) as product_ids
+                FROM ' . _DB_PREFIX_ . 'product p
+                INNER JOIN ' . _DB_PREFIX_ . 'product_lang pl ON p.id_product = pl.id_product
+                    AND pl.id_lang = ' . (int) $idLang . ' AND pl.id_shop = ' . (int) $idShop . '
+                INNER JOIN ' . _DB_PREFIX_ . 'product_shop ps ON p.id_product = ps.id_product
+                    AND ps.id_shop = ' . (int) $idShop . '
+                WHERE ps.active = 1 AND pl.meta_title != "" AND pl.meta_title IS NOT NULL
+                GROUP BY pl.meta_title
+                HAVING cnt > 1';
+
+        return Db::getInstance()->executeS($sql);
+    }
+
+    /**
+     * Get duplicate meta descriptions
+     * @param int $idLang
+     * @param int $idShop
+     * @return array
+     */
+    public function getDuplicateDescriptions($idLang, $idShop)
+    {
+        $sql = 'SELECT pl.meta_description, COUNT(*) as cnt, GROUP_CONCAT(p.id_product) as product_ids
+                FROM ' . _DB_PREFIX_ . 'product p
+                INNER JOIN ' . _DB_PREFIX_ . 'product_lang pl ON p.id_product = pl.id_product
+                    AND pl.id_lang = ' . (int) $idLang . ' AND pl.id_shop = ' . (int) $idShop . '
+                INNER JOIN ' . _DB_PREFIX_ . 'product_shop ps ON p.id_product = ps.id_product
+                    AND ps.id_shop = ' . (int) $idShop . '
+                WHERE ps.active = 1 AND pl.meta_description != "" AND pl.meta_description IS NOT NULL
+                GROUP BY pl.meta_description
+                HAVING cnt > 1';
+
+        return Db::getInstance()->executeS($sql);
+    }
 }

@@ -544,6 +544,15 @@ class ProSEOMasterRedirects
     }
 
     /**
+     * Get stats (alias for getStatistics)
+     * @return array
+     */
+    public function getStats()
+    {
+        return $this->getStatistics();
+    }
+
+    /**
      * Clean old unused redirects
      * @param int $daysOld Remove redirects older than X days with 0 hits
      * @return int Number of deleted redirects
