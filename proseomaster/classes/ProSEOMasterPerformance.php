@@ -168,7 +168,7 @@ class ProSEOMasterPerformance
             case 'product':
                 // Product cover image is likely LCP
                 if (isset($this->context->smarty->tpl_vars['product'])) {
-                    $product = $this->context->smarty->tpl_vars['product']->value;
+                    $product = $this->context->smarty->tpl_vars['product']->value ?? array();
                     if (is_array($product) && !empty($product['cover']['large']['url'])) {
                         return array(
                             'url' => $product['cover']['large']['url'],
@@ -182,7 +182,7 @@ class ProSEOMasterPerformance
             case 'category':
                 // First product image or category banner
                 if (isset($this->context->smarty->tpl_vars['listing'])) {
-                    $listing = $this->context->smarty->tpl_vars['listing']->value;
+                    $listing = $this->context->smarty->tpl_vars['listing']->value ?? array();
                     if (!empty($listing['products'][0]['cover']['medium']['url'])) {
                         return array(
                             'url' => $listing['products'][0]['cover']['medium']['url'],

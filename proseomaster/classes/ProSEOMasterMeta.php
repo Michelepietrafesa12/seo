@@ -240,12 +240,19 @@ class ProSEOMasterMeta
     public function generateCanonicalUrl($currentUrl, $pageType)
     {
         $parsedUrl = parse_url($currentUrl);
-        $baseUrl = $parsedUrl['scheme'] . '://' . $parsedUrl['host'] . $parsedUrl['path'];
+
+        // PHP 8.x null safety - ensure parsed URL components exist
+        if (!$parsedUrl || !isset($parsedUrl['scheme']) || !isset($parsedUrl['host'])) {
+            return $currentUrl;
+        }
+
+        $baseUrl = $parsedUrl['scheme'] . '://' . $parsedUrl['host'] . (isset($parsedUrl['path']) ? $parsedUrl['path'] : '/');
 
         // Parameters to preserve in canonical
         $preserveParams = array();
+        $queryParams = array();
 
-        if (isset($parsedUrl['query'])) {
+        if (isset($parsedUrl['query']) && !empty($parsedUrl['query'])) {
             parse_str($parsedUrl['query'], $queryParams);
 
             // Define which parameters to preserve based on page type

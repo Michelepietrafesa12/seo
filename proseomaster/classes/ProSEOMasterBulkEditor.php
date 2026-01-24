@@ -48,7 +48,9 @@ class ProSEOMasterBulkEditor
                 WHERE ps.active = 1';
 
         if (!empty($filter)) {
-            $sql .= ' AND (pl.name LIKE "%' . pSQL($filter) . '%" OR p.reference LIKE "%' . pSQL($filter) . '%")';
+            // Escape LIKE wildcard characters to prevent injection
+            $escapedFilter = str_replace(array('%', '_'), array('\\%', '\\_'), $filter);
+            $sql .= ' AND (pl.name LIKE "%' . pSQL($escapedFilter) . '%" OR p.reference LIKE "%' . pSQL($escapedFilter) . '%")';
         }
 
         $sql .= ' ORDER BY p.id_product ASC';

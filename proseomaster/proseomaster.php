@@ -350,9 +350,9 @@ class ProSEOMaster extends Module
         $html .= '<div class="form-group">';
         $html .= '<label class="control-label"><strong>' . $this->l('Sitemap URL') . ':</strong></label>';
         $html .= '<div class="input-group">';
-        $html .= '<input type="text" class="form-control" value="' . $sitemapUrl . '" readonly onclick="this.select()">';
+        $html .= '<input type="text" class="form-control" value="' . htmlspecialchars($sitemapUrl, ENT_QUOTES, 'UTF-8') . '" readonly onclick="this.select()">';
         $html .= '<span class="input-group-btn">';
-        $html .= '<a href="' . $sitemapUrl . '" target="_blank" class="btn btn-default" title="' . $this->l('Open Sitemap') . '"><i class="icon-external-link"></i></a>';
+        $html .= '<a href="' . htmlspecialchars($sitemapUrl, ENT_QUOTES, 'UTF-8') . '" target="_blank" class="btn btn-default" title="' . $this->l('Open Sitemap') . '"><i class="icon-external-link"></i></a>';
         $html .= '</span>';
         $html .= '</div>';
         $html .= '<p class="help-block">' . $this->l('Submit this URL to Google Search Console and Bing Webmaster Tools.') . '</p>';
@@ -397,9 +397,9 @@ class ProSEOMaster extends Module
         $html .= '<h5><i class="icon-linux"></i> ' . $this->l('Linux Crontab Example') . ':</h5>';
         $html .= '<pre style="background:#333;color:#0f0;padding:10px;font-size:11px;overflow-x:auto;">';
         $html .= '# ' . $this->l('Daily at 3:00 AM') . "\n";
-        $html .= '0 3 * * * curl -s "' . $cronUrl . '" > /dev/null 2>&1' . "\n\n";
+        $html .= '0 3 * * * curl -s "' . htmlspecialchars($cronUrl, ENT_QUOTES, 'UTF-8') . '" > /dev/null 2>&1' . "\n\n";
         $html .= '# ' . $this->l('Every 6 hours') . "\n";
-        $html .= '0 */6 * * * wget -q -O - "' . $cronUrl . '" > /dev/null 2>&1';
+        $html .= '0 */6 * * * wget -q -O - "' . htmlspecialchars($cronUrl, ENT_QUOTES, 'UTF-8') . '" > /dev/null 2>&1';
         $html .= '</pre>';
         $html .= '</div>';
         $html .= '</div>';
@@ -413,7 +413,7 @@ class ProSEOMaster extends Module
         $html .= '<li>' . $this->l('Command:') . '</li>';
         $html .= '</ol>';
         $html .= '<pre style="background:#333;color:#0f0;padding:10px;font-size:11px;overflow-x:auto;">';
-        $html .= '/usr/bin/curl -s "' . $cronUrl . '"';
+        $html .= '/usr/bin/curl -s "' . htmlspecialchars($cronUrl, ENT_QUOTES, 'UTF-8') . '"';
         $html .= '</pre>';
         $html .= '</div>';
         $html .= '</div>';
@@ -433,7 +433,7 @@ class ProSEOMaster extends Module
         $html .= '<div class="col-lg-6">';
         $html .= '<div class="form-group">';
         $html .= '<label class="control-label"><strong>' . $this->l('Current Token') . ':</strong></label>';
-        $html .= '<input type="text" class="form-control" value="' . $cronToken . '" readonly style="font-family:monospace;">';
+        $html .= '<input type="text" class="form-control" value="' . htmlspecialchars($cronToken, ENT_QUOTES, 'UTF-8') . '" readonly style="font-family:monospace;">';
         $html .= '</div>';
         $html .= '</div>';
         $html .= '</div>';
@@ -1236,15 +1236,17 @@ class ProSEOMaster extends Module
         $controller = $this->context->controller;
         $page = $controller->getPageName();
 
-        $title = $this->context->smarty->tpl_vars['page']->value['meta']['title'] ?? Configuration::get('PS_SHOP_NAME');
-        $description = $this->context->smarty->tpl_vars['page']->value['meta']['description'] ?? '';
+        // Safe access to Smarty template variables (PHP 8.x null safety)
+        $pageVars = isset($this->context->smarty->tpl_vars['page']) ? $this->context->smarty->tpl_vars['page']->value : array();
+        $title = $pageVars['meta']['title'] ?? Configuration::get('PS_SHOP_NAME');
+        $description = $pageVars['meta']['description'] ?? '';
         $url = $this->getCurrentUrl();
         $image = Configuration::get('PROSEOMASTER_DEFAULT_OG_IMAGE');
         $siteName = Configuration::get('PS_SHOP_NAME');
 
         // Get product-specific data
         if ($page === 'product' && isset($this->context->smarty->tpl_vars['product'])) {
-            $product = $this->context->smarty->tpl_vars['product']->value;
+            $product = $this->context->smarty->tpl_vars['product']->value ?? array();
             if (is_array($product)) {
                 $title = $product['name'] ?? $title;
                 $description = strip_tags($product['description_short'] ?? $description);
@@ -1256,7 +1258,7 @@ class ProSEOMaster extends Module
 
         // Get category-specific data
         if ($page === 'category' && isset($this->context->smarty->tpl_vars['category'])) {
-            $category = $this->context->smarty->tpl_vars['category']->value;
+            $category = $this->context->smarty->tpl_vars['category']->value ?? null;
             if (is_object($category)) {
                 $title = $category->name ?? $title;
                 $description = strip_tags($category->description ?? $description);
@@ -1402,7 +1404,7 @@ class ProSEOMaster extends Module
         switch ($page) {
             case 'product':
                 if (isset($this->context->smarty->tpl_vars['product'])) {
-                    $product = $this->context->smarty->tpl_vars['product']->value;
+                    $product = $this->context->smarty->tpl_vars['product']->value ?? array();
                     if (is_array($product) && isset($product['id_product'])) {
                         return $link->getProductLink($product['id_product'], null, null, null, $idLang);
                     }
@@ -1410,7 +1412,7 @@ class ProSEOMaster extends Module
                 break;
             case 'category':
                 if (isset($this->context->smarty->tpl_vars['category'])) {
-                    $category = $this->context->smarty->tpl_vars['category']->value;
+                    $category = $this->context->smarty->tpl_vars['category']->value ?? null;
                     if (is_object($category)) {
                         return $link->getCategoryLink($category->id, null, $idLang);
                     }
@@ -1681,7 +1683,7 @@ class ProSEOMaster extends Module
             return null;
         }
 
-        $breadcrumb = $this->context->smarty->tpl_vars['breadcrumb']->value;
+        $breadcrumb = $this->context->smarty->tpl_vars['breadcrumb']->value ?? array();
         if (empty($breadcrumb['links'])) {
             return null;
         }
@@ -1725,7 +1727,7 @@ class ProSEOMaster extends Module
             return null;
         }
 
-        $productData = $this->context->smarty->tpl_vars['product']->value;
+        $productData = $this->context->smarty->tpl_vars['product']->value ?? array();
         if (!is_array($productData) || empty($productData['id_product'])) {
             return null;
         }
@@ -2480,7 +2482,7 @@ class ProSEOMaster extends Module
             return null;
         }
 
-        $listing = $this->context->smarty->tpl_vars['listing']->value;
+        $listing = $this->context->smarty->tpl_vars['listing']->value ?? array();
         if (empty($listing['products'])) {
             return null;
         }
@@ -2509,7 +2511,7 @@ class ProSEOMaster extends Module
 
         $categoryName = '';
         if (isset($this->context->smarty->tpl_vars['category'])) {
-            $category = $this->context->smarty->tpl_vars['category']->value;
+            $category = $this->context->smarty->tpl_vars['category']->value ?? null;
             if (is_object($category)) {
                 $categoryName = $category->name;
             }
@@ -3600,7 +3602,7 @@ class ProSEOMaster extends Module
         $duration = round(microtime(true) - $startTime, 2);
 
         // Store results in session for display and export
-        $this->context->cookie->__set('proseo_link_results', json_encode($results));
+        $this->context->cookie->proseo_link_results = json_encode($results);
         $this->context->cookie->write();
 
         return $this->renderLinkCheckerResults($results, $duration, $scanType);
@@ -3611,7 +3613,7 @@ class ProSEOMaster extends Module
      */
     protected function exportBrokenLinksAction()
     {
-        $resultsJson = $this->context->cookie->__get('proseo_link_results');
+        $resultsJson = isset($this->context->cookie->proseo_link_results) ? $this->context->cookie->proseo_link_results : '';
 
         if (empty($resultsJson)) {
             return;

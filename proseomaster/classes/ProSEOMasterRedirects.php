@@ -385,6 +385,9 @@ class ProSEOMasterRedirects
         $lastPart = preg_replace('/\.(html?|php)$/i', '', $lastPart);
         $lastPart = preg_replace('/-\d+$/', '', $lastPart); // Remove ID suffix
 
+        // Escape LIKE wildcard characters to prevent injection
+        $escapedPart = str_replace(array('%', '_'), array('\\%', '\\_'), $lastPart);
+
         // Search for similar products
         $productSearch = Db::getInstance()->executeS(
             'SELECT p.id_product, pl.name, pl.link_rewrite
@@ -394,7 +397,7 @@ class ProSEOMasterRedirects
              WHERE pl.id_lang = ' . (int) $this->context->language->id . '
              AND ps.id_shop = ' . (int) $this->idShop . '
              AND ps.active = 1
-             AND (pl.link_rewrite LIKE "%' . pSQL($lastPart) . '%" OR pl.name LIKE "%' . pSQL($lastPart) . '%")
+             AND (pl.link_rewrite LIKE "%' . pSQL($escapedPart) . '%" OR pl.name LIKE "%' . pSQL($escapedPart) . '%")
              LIMIT 5'
         );
 
@@ -415,7 +418,7 @@ class ProSEOMasterRedirects
              WHERE cl.id_lang = ' . (int) $this->context->language->id . '
              AND cs.id_shop = ' . (int) $this->idShop . '
              AND c.active = 1
-             AND (cl.link_rewrite LIKE "%' . pSQL($lastPart) . '%" OR cl.name LIKE "%' . pSQL($lastPart) . '%")
+             AND (cl.link_rewrite LIKE "%' . pSQL($escapedPart) . '%" OR cl.name LIKE "%' . pSQL($escapedPart) . '%")
              LIMIT 5'
         );
 
