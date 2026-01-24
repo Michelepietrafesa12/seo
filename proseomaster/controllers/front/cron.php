@@ -68,7 +68,7 @@ class ProSEOMasterCronModuleFrontController extends ModuleFrontController
             require_once _PS_MODULE_DIR_ . 'proseomaster/classes/ProSEOMasterSitemap.php';
 
             $sitemap = new ProSEOMasterSitemap();
-            $result = $sitemap->generate();
+            $result = $sitemap->generateSitemap();
 
             if ($result) {
                 // Update last generated timestamp
@@ -103,7 +103,7 @@ class ProSEOMasterCronModuleFrontController extends ModuleFrontController
             require_once _PS_MODULE_DIR_ . 'proseomaster/classes/ProSEOMasterRobots.php';
 
             $robots = new ProSEOMasterRobots();
-            $result = $robots->generate();
+            $result = $robots->saveRobotsTxt();
 
             if ($result) {
                 $this->outputJson(array(

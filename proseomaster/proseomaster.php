@@ -171,7 +171,6 @@ class ProSEOMaster extends Module
 
         return parent::install() &&
             $this->registerHook('displayHeader') &&
-            $this->registerHook('displayAfterBodyOpeningTag') &&
             $this->registerHook('actionFrontControllerSetMedia') &&
             $this->registerHook('actionOutputHTMLBefore') &&
             $this->registerHook('moduleRoutes') &&
