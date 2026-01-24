@@ -5,6 +5,22 @@ services:
     _defaults:
         public: true
 
+    # Admin Controller - must be registered as service for Symfony routing
+    ProSEOMaster\Controller\Admin\ProSEOMasterController:
+        class: ProSEOMaster\Controller\Admin\ProSEOMasterController
+        public: true
+        tags: ['controller.service_arguments']
+
+    # Form Type - registered without parent to avoid autowire inheritance issues
+    ProSEOMaster\Form\GeneralSettingsType:
+        class: ProSEOMaster\Form\GeneralSettingsType
+        public: true
+        arguments:
+            - '@translator'
+            - []
+        tags:
+            - { name: form.type }
+
     # Form Handlers
     proseomaster.form.handler.general_settings:
         class: ProSEOMaster\Form\GeneralSettingsFormHandler
