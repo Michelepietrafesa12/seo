@@ -1,0 +1,58 @@
+{# ProSEO Master - Configuration Page #}
+{% extends '@Modules/proseomaster/views/templates/admin/layout.html.twig' %}
+
+{% block page_content %}
+    <div class="card proseo-card">
+        <div class="card-header">
+            <h3 class="card-header-title">
+                <i class="material-icons">settings</i>
+                {{ 'General Settings'|trans({}, 'Modules.Proseomaster.Admin') }}
+            </h3>
+        </div>
+        <div class="card-body">
+            {{ form_start(form) }}
+
+            <div class="row">
+                <div class="col-lg-6">
+                    <h4>{{ 'Meta Tags'|trans({}, 'Modules.Proseomaster.Admin') }}</h4>
+                    {{ form_row(form.enable_meta_optimization) }}
+                    {{ form_row(form.meta_title_template) }}
+                    {{ form_row(form.meta_description_template) }}
+                </div>
+                <div class="col-lg-6">
+                    <h4>{{ 'Structured Data'|trans({}, 'Modules.Proseomaster.Admin') }}</h4>
+                    {{ form_row(form.enable_schema) }}
+                    {{ form_row(form.enable_og_tags) }}
+                    {{ form_row(form.enable_twitter_cards) }}
+                </div>
+            </div>
+
+            <hr>
+
+            <div class="row">
+                <div class="col-lg-6">
+                    <h4>{{ 'Performance'|trans({}, 'Modules.Proseomaster.Admin') }}</h4>
+                    {{ form_row(form.enable_preload) }}
+                    {{ form_row(form.enable_lazy_images) }}
+                    {{ form_row(form.enable_dns_prefetch) }}
+                </div>
+                <div class="col-lg-6">
+                    <h4>{{ 'AI SEO'|trans({}, 'Modules.Proseomaster.Admin') }}</h4>
+                    {{ form_row(form.enable_ai_seo) }}
+                    {{ form_row(form.enable_llms_txt) }}
+                </div>
+            </div>
+
+            <hr>
+
+            <div class="text-center">
+                <button type="submit" class="btn btn-primary btn-lg">
+                    <i class="material-icons">save</i>
+                    {{ 'Save Settings'|trans({}, 'Modules.Proseomaster.Admin') }}
+                </button>
+            </div>
+
+            {{ form_end(form) }}
+        </div>
+    </div>
+{% endblock %}

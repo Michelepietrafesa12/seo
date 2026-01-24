@@ -1,15 +1,22 @@
 <?php
 /**
- * ProSEOMaster - Professional SEO Module for PrestaShop 1.7
+ * ProSEOMaster - Professional SEO Module for PrestaShop 8.x
+ *
+ * Modern Symfony-based admin controller with full PS 8.2 compatibility
  *
  * @author      SEO Expert
  * @copyright   2024
  * @license     MIT
- * @version     2.4.0
+ * @version     2.5.0
  */
 
 if (!defined('_PS_VERSION_')) {
     exit;
+}
+
+// Composer autoloader for namespaced classes
+if (file_exists(dirname(__FILE__) . '/vendor/autoload.php')) {
+    require_once dirname(__FILE__) . '/vendor/autoload.php';
 }
 
 // Include helper classes
@@ -25,6 +32,8 @@ require_once dirname(__FILE__) . '/classes/ProSEOMasterRedirects.php';
 require_once dirname(__FILE__) . '/classes/ProSEOMasterLinkChecker.php';
 require_once dirname(__FILE__) . '/classes/ProSEOMasterSchemaValidator.php';
 require_once dirname(__FILE__) . '/classes/ProSEOMasterBulkEditor.php';
+
+use PrestaShop\PrestaShop\Core\Module\WidgetInterface;
 
 class ProSEOMaster extends Module
 {
@@ -227,6 +236,38 @@ class ProSEOMaster extends Module
             return $tab->delete();
         }
         return true;
+    }
+
+    /**
+     * Indicates this module uses new translation system
+     * Required for PrestaShop 8.x Symfony integration
+     *
+     * @return bool
+     */
+    public function isUsingNewTranslationSystem(): bool
+    {
+        return true;
+    }
+
+    /**
+     * Get admin controller route for Symfony
+     * Points to the modern Symfony controller
+     *
+     * @return string
+     */
+    public function getAdminLink(): string
+    {
+        return $this->context->link->getAdminLink('AdminProSEOMaster');
+    }
+
+    /**
+     * Check if PrestaShop version supports Symfony routing
+     *
+     * @return bool
+     */
+    private function isSymfonyRoutingAvailable(): bool
+    {
+        return version_compare(_PS_VERSION_, '1.7.6.0', '>=');
     }
 
     /**

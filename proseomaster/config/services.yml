@@ -1,0 +1,27 @@
+# ProSEO Master - Service Configuration
+# PrestaShop 8.x Symfony DI
+
+services:
+    _defaults:
+        public: true
+        autowire: true
+        autoconfigure: true
+
+    # Controllers
+    ProSEOMaster\Controller\Admin\ProSEOMasterController:
+        class: ProSEOMaster\Controller\Admin\ProSEOMasterController
+        tags: ['controller.service_arguments']
+
+    # Form Types
+    ProSEOMaster\Form\GeneralSettingsType:
+        class: ProSEOMaster\Form\GeneralSettingsType
+        parent: 'form.type.translatable.aware'
+        public: true
+        tags:
+            - { name: form.type }
+
+    # Form Handlers
+    proseomaster.form.handler.general_settings:
+        class: ProSEOMaster\Form\GeneralSettingsFormHandler
+        arguments:
+            - '@form.factory'

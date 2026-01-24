@@ -1,0 +1,96 @@
+{# ProSEO Master - Schema Test #}
+{% extends '@Modules/proseomaster/views/templates/admin/layout.html.twig' %}
+
+{% block page_content %}
+    <div class="card proseo-card">
+        <div class="card-header">
+            <h3 class="card-header-title">
+                <i class="material-icons">code</i>
+                {{ 'Structured Data Testing'|trans({}, 'Modules.Proseomaster.Admin') }}
+            </h3>
+        </div>
+        <div class="card-body">
+            <div class="alert alert-info">
+                <i class="material-icons">info</i>
+                {{ 'Use these URLs to test your structured data in Google Rich Results Test'|trans({}, 'Modules.Proseomaster.Admin') }}
+            </div>
+
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>{{ 'Page Type'|trans({}, 'Modules.Proseomaster.Admin') }}</th>
+                        <th>{{ 'URL'|trans({}, 'Modules.Proseomaster.Admin') }}</th>
+                        <th>{{ 'Actions'|trans({}, 'Modules.Proseomaster.Admin') }}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for test in test_urls %}
+                        <tr>
+                            <td>
+                                <span class="badge badge-primary">{{ test.type }}</span>
+                            </td>
+                            <td>
+                                <code>{{ test.url }}</code>
+                            </td>
+                            <td>
+                                <a href="{{ test.url }}" target="_blank" class="btn btn-sm btn-outline-primary">
+                                    <i class="material-icons">open_in_new</i>
+                                    {{ 'View'|trans({}, 'Modules.Proseomaster.Admin') }}
+                                </a>
+                                <a href="https://search.google.com/test/rich-results?url={{ test.url|url_encode }}"
+                                   target="_blank" class="btn btn-sm btn-outline-success">
+                                    <i class="material-icons">check_circle</i>
+                                    {{ 'Test in Google'|trans({}, 'Modules.Proseomaster.Admin') }}
+                                </a>
+                            </td>
+                        </tr>
+                    {% else %}
+                        <tr>
+                            <td colspan="3" class="text-center text-muted">
+                                {{ 'No test URLs available'|trans({}, 'Modules.Proseomaster.Admin') }}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card proseo-card mt-4">
+        <div class="card-header">
+            <h3 class="card-header-title">
+                <i class="material-icons">help</i>
+                {{ 'Supported Schema Types'|trans({}, 'Modules.Proseomaster.Admin') }}
+            </h3>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-4">
+                    <h5><i class="material-icons text-success">check</i> Product</h5>
+                    <ul>
+                        <li>name, description, image</li>
+                        <li>price, currency, availability</li>
+                        <li>brand, sku, gtin</li>
+                        <li>reviews, aggregateRating</li>
+                    </ul>
+                </div>
+                <div class="col-md-4">
+                    <h5><i class="material-icons text-success">check</i> Organization</h5>
+                    <ul>
+                        <li>name, logo, url</li>
+                        <li>contactPoint</li>
+                        <li>address</li>
+                        <li>sameAs (social links)</li>
+                    </ul>
+                </div>
+                <div class="col-md-4">
+                    <h5><i class="material-icons text-success">check</i> BreadcrumbList</h5>
+                    <ul>
+                        <li>itemListElement</li>
+                        <li>position, name, item</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}

@@ -1,0 +1,156 @@
+{# ProSEO Master - Sitemap Management #}
+{% extends '@Modules/proseomaster/views/templates/admin/layout.html.twig' %}
+
+{% block page_content %}
+    <div class="row">
+        <div class="col-lg-6">
+            <div class="card proseo-card">
+                <div class="card-header">
+                    <h3 class="card-header-title">
+                        <i class="material-icons">map</i>
+                        {{ 'Sitemap Status'|trans({}, 'Modules.Proseomaster.Admin') }}
+                    </h3>
+                </div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label>{{ 'Sitemap URL'|trans({}, 'Modules.Proseomaster.Admin') }}:</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="sitemapUrl" value="{{ sitemap_url }}" readonly>
+                            <div class="input-group-append">
+                                <a href="{{ sitemap_url }}" target="_blank" class="btn btn-outline-secondary">
+                                    <i class="material-icons">open_in_new</i>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>{{ 'Last Generated'|trans({}, 'Modules.Proseomaster.Admin') }}:</label>
+                        <p class="form-control-plaintext">
+                            {% if sitemap_date %}
+                                <span class="badge badge-success">{{ sitemap_date }}</span>
+                            {% else %}
+                                <span class="badge badge-warning">{{ 'Never generated'|trans({}, 'Modules.Proseomaster.Admin') }}</span>
+                            {% endif %}
+                        </p>
+                    </div>
+
+                    <button type="button" id="generateSitemapBtn" class="btn btn-primary btn-lg btn-block">
+                        <i class="material-icons">refresh</i>
+                        {{ 'Generate Sitemap Now'|trans({}, 'Modules.Proseomaster.Admin') }}
+                    </button>
+
+                    <div id="sitemapResult" class="alert mt-3" style="display:none;"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-6">
+            <div class="card proseo-card">
+                <div class="card-header">
+                    <h3 class="card-header-title">
+                        <i class="material-icons">schedule</i>
+                        {{ 'Cron Job Configuration'|trans({}, 'Modules.Proseomaster.Admin') }}
+                    </h3>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info">
+                        {{ 'Use this URL to automatically regenerate the sitemap via cron job:'|trans({}, 'Modules.Proseomaster.Admin') }}
+                    </div>
+
+                    <div class="form-group">
+                        <label>{{ 'Cron URL'|trans({}, 'Modules.Proseomaster.Admin') }}:</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="cronUrl" value="{{ cron_url }}" readonly>
+                            <div class="input-group-append">
+                                <button type="button" class="btn btn-outline-secondary" onclick="copyToClipboard('cronUrl')">
+                                    <i class="material-icons">content_copy</i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>{{ 'Current Token'|trans({}, 'Modules.Proseomaster.Admin') }}:</label>
+                        <input type="text" class="form-control" id="cronToken" value="{{ cron_token }}" readonly style="font-family: monospace;">
+                    </div>
+
+                    <button type="button" id="regenerateTokenBtn" class="btn btn-warning">
+                        <i class="material-icons">vpn_key</i>
+                        {{ 'Regenerate Token'|trans({}, 'Modules.Proseomaster.Admin') }}
+                    </button>
+
+                    <hr>
+
+                    <h5>{{ 'Crontab Example'|trans({}, 'Modules.Proseomaster.Admin') }}:</h5>
+                    <pre class="bg-dark text-light p-3 rounded"><code># {{ 'Daily at 3:00 AM'|trans({}, 'Modules.Proseomaster.Admin') }}
+0 3 * * * curl -s "{{ cron_url }}" > /dev/null 2>&1</code></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block page_scripts %}
+    <script>
+        function copyToClipboard(elementId) {
+            var el = document.getElementById(elementId);
+            el.select();
+            document.execCommand('copy');
+            $.growl.notice({ message: '{{ 'Copied to clipboard!'|trans({}, 'Modules.Proseomaster.Admin') }}' });
+        }
+
+        $('#generateSitemapBtn').on('click', function() {
+            var btn = $(this);
+            btn.prop('disabled', true).html('<i class="material-icons spin">refresh</i> {{ 'Generating...'|trans({}, 'Modules.Proseomaster.Admin') }}');
+
+            $.ajax({
+                url: '{{ path('proseomaster_sitemap_generate') }}',
+                method: 'POST',
+                dataType: 'json',
+                success: function(response) {
+                    if (response.success) {
+                        $('#sitemapResult').removeClass('alert-danger').addClass('alert-success')
+                            .html('<i class="material-icons">check_circle</i> ' + response.message)
+                            .show();
+                    } else {
+                        $('#sitemapResult').removeClass('alert-success').addClass('alert-danger')
+                            .html('<i class="material-icons">error</i> ' + response.message)
+                            .show();
+                    }
+                },
+                error: function() {
+                    $('#sitemapResult').removeClass('alert-success').addClass('alert-danger')
+                        .html('<i class="material-icons">error</i> {{ 'An error occurred'|trans({}, 'Modules.Proseomaster.Admin') }}')
+                        .show();
+                },
+                complete: function() {
+                    btn.prop('disabled', false).html('<i class="material-icons">refresh</i> {{ 'Generate Sitemap Now'|trans({}, 'Modules.Proseomaster.Admin') }}');
+                }
+            });
+        });
+
+        $('#regenerateTokenBtn').on('click', function() {
+            if (!confirm('{{ 'Are you sure? The old token will stop working.'|trans({}, 'Modules.Proseomaster.Admin') }}')) {
+                return;
+            }
+
+            $.ajax({
+                url: '{{ path('proseomaster_cron_token_regenerate') }}',
+                method: 'POST',
+                dataType: 'json',
+                success: function(response) {
+                    if (response.success) {
+                        $('#cronToken').val(response.token);
+                        $('#cronUrl').val(response.cron_url);
+                        $.growl.notice({ message: response.message });
+                    }
+                }
+            });
+        });
+    </script>
+    <style>
+        .spin { animation: spin 1s linear infinite; }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+    </style>
+{% endblock %}

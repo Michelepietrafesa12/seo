@@ -1,0 +1,92 @@
+{# ProSEO Master - Bulk Editor #}
+{% extends '@Modules/proseomaster/views/templates/admin/layout.html.twig' %}
+
+{% block page_content %}
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card proseo-card proseo-stat-card">
+                <div class="stat-value">{{ summary.total_products|default(0) }}</div>
+                <div class="stat-label">{{ 'Total Products'|trans({}, 'Modules.Proseomaster.Admin') }}</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card proseo-card proseo-stat-card">
+                <div class="stat-value text-success">{{ summary.with_meta|default(0) }}</div>
+                <div class="stat-label">{{ 'With Meta'|trans({}, 'Modules.Proseomaster.Admin') }}</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card proseo-card proseo-stat-card">
+                <div class="stat-value text-danger">{{ summary.without_meta|default(0) }}</div>
+                <div class="stat-label">{{ 'Without Meta'|trans({}, 'Modules.Proseomaster.Admin') }}</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card proseo-card proseo-stat-card">
+                <a href="{{ path('proseomaster_export_seo') }}" class="btn btn-primary btn-lg">
+                    <i class="material-icons">file_download</i>
+                    {{ 'Export CSV'|trans({}, 'Modules.Proseomaster.Admin') }}
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="card proseo-card">
+        <div class="card-header">
+            <h3 class="card-header-title">
+                <i class="material-icons">edit</i>
+                {{ 'Product SEO Data'|trans({}, 'Modules.Proseomaster.Admin') }}
+            </h3>
+        </div>
+        <div class="card-body">
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>{{ 'Product'|trans({}, 'Modules.Proseomaster.Admin') }}</th>
+                        <th>{{ 'Meta Title'|trans({}, 'Modules.Proseomaster.Admin') }}</th>
+                        <th>{{ 'Meta Description'|trans({}, 'Modules.Proseomaster.Admin') }}</th>
+                        <th>{{ 'Status'|trans({}, 'Modules.Proseomaster.Admin') }}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for product in products %}
+                        <tr>
+                            <td>{{ product.id_product }}</td>
+                            <td>{{ product.name }}</td>
+                            <td>
+                                <span class="badge badge-{{ product.meta_title_status }}">
+                                    {{ product.meta_title_length }} {{ 'chars'|trans({}, 'Modules.Proseomaster.Admin') }}
+                                </span>
+                                <br>
+                                <small class="text-muted">{{ product.meta_title|slice(0, 50) }}{% if product.meta_title|length > 50 %}...{% endif %}</small>
+                            </td>
+                            <td>
+                                <span class="badge badge-{{ product.meta_desc_status }}">
+                                    {{ product.meta_desc_length }} {{ 'chars'|trans({}, 'Modules.Proseomaster.Admin') }}
+                                </span>
+                                <br>
+                                <small class="text-muted">{{ product.meta_description|slice(0, 50) }}{% if product.meta_description|length > 50 %}...{% endif %}</small>
+                            </td>
+                            <td>
+                                {% if product.meta_title_status == 'success' and product.meta_desc_status == 'success' %}
+                                    <span class="badge badge-success">{{ 'OK'|trans({}, 'Modules.Proseomaster.Admin') }}</span>
+                                {% elseif product.meta_title_status == 'danger' or product.meta_desc_status == 'danger' %}
+                                    <span class="badge badge-danger">{{ 'Missing'|trans({}, 'Modules.Proseomaster.Admin') }}</span>
+                                {% else %}
+                                    <span class="badge badge-warning">{{ 'Review'|trans({}, 'Modules.Proseomaster.Admin') }}</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% else %}
+                        <tr>
+                            <td colspan="5" class="text-center text-muted">
+                                {{ 'No products found'|trans({}, 'Modules.Proseomaster.Admin') }}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+{% endblock %}

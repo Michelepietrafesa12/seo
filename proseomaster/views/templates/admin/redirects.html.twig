@@ -1,0 +1,161 @@
+{# ProSEO Master - Redirects Management #}
+{% extends '@Modules/proseomaster/views/templates/admin/layout.html.twig' %}
+
+{% block page_content %}
+    <div class="row">
+        <div class="col-lg-4">
+            <div class="card proseo-card">
+                <div class="card-header">
+                    <h3 class="card-header-title">
+                        <i class="material-icons">add_circle</i>
+                        {{ 'Add New Redirect'|trans({}, 'Modules.Proseomaster.Admin') }}
+                    </h3>
+                </div>
+                <div class="card-body">
+                    <form id="addRedirectForm">
+                        <div class="form-group">
+                            <label>{{ 'Old URL'|trans({}, 'Modules.Proseomaster.Admin') }}:</label>
+                            <input type="text" name="old_url" class="form-control" placeholder="/old-page.html" required>
+                        </div>
+                        <div class="form-group">
+                            <label>{{ 'New URL'|trans({}, 'Modules.Proseomaster.Admin') }}:</label>
+                            <input type="text" name="new_url" class="form-control" placeholder="/new-page.html" required>
+                        </div>
+                        <div class="form-group">
+                            <label>{{ 'Redirect Type'|trans({}, 'Modules.Proseomaster.Admin') }}:</label>
+                            <select name="redirect_type" class="form-control">
+                                <option value="301">301 - {{ 'Permanent'|trans({}, 'Modules.Proseomaster.Admin') }}</option>
+                                <option value="302">302 - {{ 'Temporary'|trans({}, 'Modules.Proseomaster.Admin') }}</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-block">
+                            <i class="material-icons">add</i>
+                            {{ 'Add Redirect'|trans({}, 'Modules.Proseomaster.Admin') }}
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="card proseo-card mt-3">
+                <div class="card-header">
+                    <h3 class="card-header-title">
+                        <i class="material-icons">bar_chart</i>
+                        {{ 'Statistics'|trans({}, 'Modules.Proseomaster.Admin') }}
+                    </h3>
+                </div>
+                <div class="card-body">
+                    <ul class="list-group">
+                        <li class="list-group-item d-flex justify-content-between">
+                            {{ 'Total Redirects'|trans({}, 'Modules.Proseomaster.Admin') }}
+                            <span class="badge badge-primary">{{ stats.total|default(0) }}</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between">
+                            {{ 'Active'|trans({}, 'Modules.Proseomaster.Admin') }}
+                            <span class="badge badge-success">{{ stats.active|default(0) }}</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between">
+                            {{ 'Total Hits'|trans({}, 'Modules.Proseomaster.Admin') }}
+                            <span class="badge badge-info">{{ stats.total_hits|default(0) }}</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-8">
+            <div class="card proseo-card">
+                <div class="card-header">
+                    <h3 class="card-header-title">
+                        <i class="material-icons">list</i>
+                        {{ 'Redirect List'|trans({}, 'Modules.Proseomaster.Admin') }}
+                    </h3>
+                </div>
+                <div class="card-body">
+                    <table class="table table-striped" id="redirectsTable">
+                        <thead>
+                            <tr>
+                                <th>{{ 'Old URL'|trans({}, 'Modules.Proseomaster.Admin') }}</th>
+                                <th>{{ 'New URL'|trans({}, 'Modules.Proseomaster.Admin') }}</th>
+                                <th>{{ 'Type'|trans({}, 'Modules.Proseomaster.Admin') }}</th>
+                                <th>{{ 'Hits'|trans({}, 'Modules.Proseomaster.Admin') }}</th>
+                                <th>{{ 'Actions'|trans({}, 'Modules.Proseomaster.Admin') }}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for redirect in redirects %}
+                                <tr data-id="{{ redirect.id_redirect }}">
+                                    <td><code>{{ redirect.old_url }}</code></td>
+                                    <td><code>{{ redirect.new_url }}</code></td>
+                                    <td>
+                                        <span class="badge badge-{{ redirect.redirect_type == 301 ? 'primary' : 'secondary' }}">
+                                            {{ redirect.redirect_type }}
+                                        </span>
+                                    </td>
+                                    <td>{{ redirect.hits }}</td>
+                                    <td>
+                                        <button type="button" class="btn btn-sm btn-danger delete-redirect" data-id="{{ redirect.id_redirect }}">
+                                            <i class="material-icons">delete</i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            {% else %}
+                                <tr>
+                                    <td colspan="5" class="text-center text-muted">
+                                        {{ 'No redirects found'|trans({}, 'Modules.Proseomaster.Admin') }}
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block page_scripts %}
+    <script>
+        $('#addRedirectForm').on('submit', function(e) {
+            e.preventDefault();
+
+            $.ajax({
+                url: '{{ path('proseomaster_redirect_add') }}',
+                method: 'POST',
+                data: $(this).serialize(),
+                dataType: 'json',
+                success: function(response) {
+                    if (response.success) {
+                        $.growl.notice({ message: response.message });
+                        location.reload();
+                    } else {
+                        $.growl.error({ message: response.message });
+                    }
+                },
+                error: function() {
+                    $.growl.error({ message: '{{ 'An error occurred'|trans({}, 'Modules.Proseomaster.Admin') }}' });
+                }
+            });
+        });
+
+        $('.delete-redirect').on('click', function() {
+            if (!confirm('{{ 'Delete this redirect?'|trans({}, 'Modules.Proseomaster.Admin') }}')) {
+                return;
+            }
+
+            var id = $(this).data('id');
+            var row = $(this).closest('tr');
+
+            $.ajax({
+                url: '{{ path('proseomaster_redirect_delete', {redirectId: 0}) }}'.replace('0', id),
+                method: 'POST',
+                dataType: 'json',
+                success: function(response) {
+                    if (response.success) {
+                        row.fadeOut(function() { $(this).remove(); });
+                        $.growl.notice({ message: response.message });
+                    }
+                }
+            });
+        });
+    </script>
+{% endblock %}

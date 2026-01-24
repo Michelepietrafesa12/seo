@@ -1,0 +1,158 @@
+{# ProSEO Master - Link Checker #}
+{% extends '@Modules/proseomaster/views/templates/admin/layout.html.twig' %}
+
+{% block page_content %}
+    <div class="card proseo-card">
+        <div class="card-header">
+            <h3 class="card-header-title">
+                <i class="material-icons">link_off</i>
+                {{ 'Broken Link Checker'|trans({}, 'Modules.Proseomaster.Admin') }}
+            </h3>
+        </div>
+        <div class="card-body">
+            <div class="row mb-4">
+                <div class="col-md-6">
+                    <div class="form-group">
+                        <label>{{ 'Scan Type'|trans({}, 'Modules.Proseomaster.Admin') }}:</label>
+                        <select id="scanType" class="form-control">
+                            <option value="quick">{{ 'Quick Scan (last 30 days)'|trans({}, 'Modules.Proseomaster.Admin') }}</option>
+                            <option value="full">{{ 'Full Scan (all products)'|trans({}, 'Modules.Proseomaster.Admin') }}</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="form-group">
+                        <label>{{ 'Product Limit'|trans({}, 'Modules.Proseomaster.Admin') }}:</label>
+                        <input type="number" id="scanLimit" class="form-control" value="100" min="10" max="1000">
+                    </div>
+                </div>
+            </div>
+
+            <button type="button" id="runScanBtn" class="btn btn-primary btn-lg">
+                <i class="material-icons">search</i>
+                {{ 'Start Scan'|trans({}, 'Modules.Proseomaster.Admin') }}
+            </button>
+
+            <div id="scanProgress" class="mt-4" style="display:none;">
+                <div class="progress">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" style="width:100%">
+                        {{ 'Scanning...'|trans({}, 'Modules.Proseomaster.Admin') }}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="resultsContainer" style="display:none;" class="mt-4">
+        <div class="row">
+            <div class="col-md-3">
+                <div class="card proseo-card proseo-stat-card">
+                    <div class="stat-value" id="statProductsScanned">0</div>
+                    <div class="stat-label">{{ 'Products Scanned'|trans({}, 'Modules.Proseomaster.Admin') }}</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card proseo-card proseo-stat-card">
+                    <div class="stat-value text-danger" id="statBrokenLinks">0</div>
+                    <div class="stat-label">{{ 'Broken Links'|trans({}, 'Modules.Proseomaster.Admin') }}</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card proseo-card proseo-stat-card">
+                    <div class="stat-value text-warning" id="statBrokenImages">0</div>
+                    <div class="stat-label">{{ 'Broken Images'|trans({}, 'Modules.Proseomaster.Admin') }}</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card proseo-card proseo-stat-card">
+                    <div class="stat-value text-info" id="statRedirects">0</div>
+                    <div class="stat-label">{{ 'Redirects'|trans({}, 'Modules.Proseomaster.Admin') }}</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card proseo-card mt-4">
+            <div class="card-header">
+                <h3 class="card-header-title">{{ 'Issues Found'|trans({}, 'Modules.Proseomaster.Admin') }}</h3>
+            </div>
+            <div class="card-body">
+                <table class="table table-striped" id="issuesTable">
+                    <thead>
+                        <tr>
+                            <th>{{ 'Type'|trans({}, 'Modules.Proseomaster.Admin') }}</th>
+                            <th>{{ 'URL'|trans({}, 'Modules.Proseomaster.Admin') }}</th>
+                            <th>{{ 'Source'|trans({}, 'Modules.Proseomaster.Admin') }}</th>
+                            <th>{{ 'HTTP Code'|trans({}, 'Modules.Proseomaster.Admin') }}</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block page_scripts %}
+    <script>
+        $('#runScanBtn').on('click', function() {
+            var btn = $(this);
+            btn.prop('disabled', true);
+            $('#scanProgress').show();
+            $('#resultsContainer').hide();
+
+            $.ajax({
+                url: '{{ path('proseomaster_link_check_run') }}',
+                method: 'POST',
+                data: {
+                    scan_type: $('#scanType').val(),
+                    limit: $('#scanLimit').val()
+                },
+                dataType: 'json',
+                success: function(response) {
+                    if (response.success) {
+                        displayResults(response.results);
+                    }
+                },
+                error: function() {
+                    $.growl.error({ message: '{{ 'Scan failed'|trans({}, 'Modules.Proseomaster.Admin') }}' });
+                },
+                complete: function() {
+                    btn.prop('disabled', false);
+                    $('#scanProgress').hide();
+                }
+            });
+        });
+
+        function displayResults(results) {
+            $('#statProductsScanned').text(results.stats.products_scanned || 0);
+            $('#statBrokenLinks').text(results.broken_links ? results.broken_links.length : 0);
+            $('#statBrokenImages').text(results.broken_images ? results.broken_images.length : 0);
+            $('#statRedirects').text(results.redirects ? results.redirects.length : 0);
+
+            var tbody = $('#issuesTable tbody').empty();
+
+            // Add broken links
+            if (results.broken_links) {
+                results.broken_links.forEach(function(item) {
+                    tbody.append('<tr class="table-danger"><td>Broken Link</td><td><code>' + item.url + '</code></td><td>' + item.source_name + '</td><td>' + item.http_code + '</td></tr>');
+                });
+            }
+
+            // Add broken images
+            if (results.broken_images) {
+                results.broken_images.forEach(function(item) {
+                    tbody.append('<tr class="table-warning"><td>Broken Image</td><td><code>' + item.url + '</code></td><td>' + item.source_name + '</td><td>' + item.http_code + '</td></tr>');
+                });
+            }
+
+            // Add redirects
+            if (results.redirects) {
+                results.redirects.forEach(function(item) {
+                    tbody.append('<tr class="table-info"><td>Redirect</td><td><code>' + item.url + '</code></td><td>' + item.source_name + '</td><td>' + item.http_code + '</td></tr>');
+                });
+            }
+
+            $('#resultsContainer').show();
+        }
+    </script>
+{% endblock %}

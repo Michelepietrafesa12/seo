@@ -1,0 +1,112 @@
+{# ProSEO Master - Dashboard #}
+{% extends '@Modules/proseomaster/views/templates/admin/layout.html.twig' %}
+
+{% block page_content %}
+    <div class="row">
+        <div class="col-lg-3 col-md-6">
+            <div class="card proseo-card proseo-stat-card">
+                <div class="stat-value">{{ stats.seo_score }}%</div>
+                <div class="stat-label">{{ 'SEO Score'|trans({}, 'Modules.Proseomaster.Admin') }}</div>
+                <div class="mt-2">
+                    {% if stats.seo_score >= 80 %}
+                        <span class="badge badge-seo-good">{{ 'Excellent'|trans({}, 'Modules.Proseomaster.Admin') }}</span>
+                    {% elseif stats.seo_score >= 60 %}
+                        <span class="badge badge-seo-warning">{{ 'Good'|trans({}, 'Modules.Proseomaster.Admin') }}</span>
+                    {% else %}
+                        <span class="badge badge-seo-danger">{{ 'Needs Work'|trans({}, 'Modules.Proseomaster.Admin') }}</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-6">
+            <div class="card proseo-card proseo-stat-card">
+                <div class="stat-value">{{ stats.products_without_meta }}</div>
+                <div class="stat-label">{{ 'Products without Meta'|trans({}, 'Modules.Proseomaster.Admin') }}</div>
+                {% if stats.products_without_meta > 0 %}
+                    <a href="{{ path('proseomaster_bulk_editor') }}" class="btn btn-sm btn-warning mt-2">
+                        {{ 'Fix Now'|trans({}, 'Modules.Proseomaster.Admin') }}
+                    </a>
+                {% endif %}
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-6">
+            <div class="card proseo-card proseo-stat-card">
+                <div class="stat-value">{{ stats.duplicate_titles }}</div>
+                <div class="stat-label">{{ 'Duplicate Titles'|trans({}, 'Modules.Proseomaster.Admin') }}</div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-6">
+            <div class="card proseo-card proseo-stat-card">
+                <div class="stat-value">{{ stats.duplicate_descriptions }}</div>
+                <div class="stat-label">{{ 'Duplicate Descriptions'|trans({}, 'Modules.Proseomaster.Admin') }}</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mt-4">
+        <div class="col-lg-6">
+            <div class="card proseo-card">
+                <div class="card-header">
+                    <h3 class="card-header-title">
+                        <i class="material-icons">flash_on</i>
+                        {{ 'Quick Actions'|trans({}, 'Modules.Proseomaster.Admin') }}
+                    </h3>
+                </div>
+                <div class="card-body">
+                    <div class="list-group">
+                        <a href="{{ path('proseomaster_sitemap') }}" class="list-group-item list-group-item-action">
+                            <i class="material-icons">map</i>
+                            {{ 'Generate Sitemap'|trans({}, 'Modules.Proseomaster.Admin') }}
+                        </a>
+                        <a href="{{ path('proseomaster_link_checker') }}" class="list-group-item list-group-item-action">
+                            <i class="material-icons">link_off</i>
+                            {{ 'Check Broken Links'|trans({}, 'Modules.Proseomaster.Admin') }}
+                        </a>
+                        <a href="{{ path('proseomaster_bulk_editor') }}" class="list-group-item list-group-item-action">
+                            <i class="material-icons">edit</i>
+                            {{ 'Bulk Edit Meta Tags'|trans({}, 'Modules.Proseomaster.Admin') }}
+                        </a>
+                        <a href="{{ path('proseomaster_schema_test') }}" class="list-group-item list-group-item-action">
+                            <i class="material-icons">code</i>
+                            {{ 'Test Schema Markup'|trans({}, 'Modules.Proseomaster.Admin') }}
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="card proseo-card">
+                <div class="card-header">
+                    <h3 class="card-header-title">
+                        <i class="material-icons">info</i>
+                        {{ 'SEO Tips'|trans({}, 'Modules.Proseomaster.Admin') }}
+                    </h3>
+                </div>
+                <div class="card-body">
+                    <ul class="list-unstyled">
+                        <li class="mb-2">
+                            <i class="material-icons text-success">check_circle</i>
+                            {{ 'Keep meta titles between 50-60 characters'|trans({}, 'Modules.Proseomaster.Admin') }}
+                        </li>
+                        <li class="mb-2">
+                            <i class="material-icons text-success">check_circle</i>
+                            {{ 'Meta descriptions should be 150-160 characters'|trans({}, 'Modules.Proseomaster.Admin') }}
+                        </li>
+                        <li class="mb-2">
+                            <i class="material-icons text-success">check_circle</i>
+                            {{ 'Use unique titles for each product'|trans({}, 'Modules.Proseomaster.Admin') }}
+                        </li>
+                        <li class="mb-2">
+                            <i class="material-icons text-success">check_circle</i>
+                            {{ 'Generate sitemap after major changes'|trans({}, 'Modules.Proseomaster.Admin') }}
+                        </li>
+                        <li class="mb-2">
+                            <i class="material-icons text-success">check_circle</i>
+                            {{ 'Check for broken links monthly'|trans({}, 'Modules.Proseomaster.Admin') }}
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
