@@ -716,8 +716,13 @@ class ProSEOMasterAudit
              WHERE id_product_2 = ' . $idProduct
         );
 
-        // Count cross-sell links if module exists
-        if (Db::getInstance()->executeS("SHOW TABLES LIKE '" . _DB_PREFIX_ . "crossselling'")) {
+        // Count cross-sell links if module exists (using information_schema for PS 8.x)
+        $crossSellingExists = Db::getInstance()->executeS(
+            "SELECT TABLE_NAME FROM information_schema.TABLES
+             WHERE TABLE_SCHEMA = DATABASE()
+             AND TABLE_NAME = '" . pSQL(_DB_PREFIX_ . 'crossselling') . "'"
+        );
+        if ($crossSellingExists) {
             $count += (int) Db::getInstance()->getValue(
                 'SELECT COUNT(*) FROM ' . _DB_PREFIX_ . 'crossselling
                  WHERE id_product_2 = ' . $idProduct

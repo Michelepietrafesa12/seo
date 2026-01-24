@@ -349,16 +349,50 @@ class ProSEOMasterSitemap
      */
     protected function saveSitemap($xml, $filename, $addToIndex = true)
     {
-        $dom = new DOMDocument('1.0', 'UTF-8');
-        $dom->preserveWhiteSpace = false;
-        $dom->formatOutput = true;
-        $dom->loadXML($xml->asXML());
+        try {
+            $dom = new DOMDocument('1.0', 'UTF-8');
+            $dom->preserveWhiteSpace = false;
+            $dom->formatOutput = true;
+            $dom->loadXML($xml->asXML());
 
-        $filepath = $this->sitemapDir . $filename;
-        $dom->save($filepath);
+            $filepath = $this->sitemapDir . $filename;
 
-        if ($addToIndex) {
-            $this->sitemapFiles[] = $filename;
+            // Check directory is writable
+            if (!is_writable($this->sitemapDir)) {
+                PrestaShopLogger::addLog(
+                    'ProSEOMaster: Cannot write sitemap - directory not writable: ' . $this->sitemapDir,
+                    3,
+                    null,
+                    'ProSEOMaster'
+                );
+                return false;
+            }
+
+            $result = $dom->save($filepath);
+
+            if ($result === false) {
+                PrestaShopLogger::addLog(
+                    'ProSEOMaster: Failed to save sitemap: ' . $filename,
+                    3,
+                    null,
+                    'ProSEOMaster'
+                );
+                return false;
+            }
+
+            if ($addToIndex) {
+                $this->sitemapFiles[] = $filename;
+            }
+
+            return true;
+        } catch (Exception $e) {
+            PrestaShopLogger::addLog(
+                'ProSEOMaster: Sitemap error - ' . $e->getMessage(),
+                3,
+                null,
+                'ProSEOMaster'
+            );
+            return false;
         }
     }
 

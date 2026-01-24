@@ -733,7 +733,7 @@ class ProSEOMasterAI
      */
     public function isAICrawler()
     {
-        $userAgent = isset($_SERVER['HTTP_USER_AGENT']) ? $_SERVER['HTTP_USER_AGENT'] : '';
+        $userAgent = Tools::getUserAgent();
 
         foreach ($this->aiCrawlers as $crawler) {
             if (stripos($userAgent, $crawler) !== false) {
@@ -750,7 +750,7 @@ class ProSEOMasterAI
      */
     public function getAICrawlerName()
     {
-        $userAgent = isset($_SERVER['HTTP_USER_AGENT']) ? $_SERVER['HTTP_USER_AGENT'] : '';
+        $userAgent = Tools::getUserAgent();
 
         foreach ($this->aiCrawlers as $crawler) {
             if (stripos($userAgent, $crawler) !== false) {

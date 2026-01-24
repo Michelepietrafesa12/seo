@@ -2442,9 +2442,11 @@ class ProSEOMaster extends Module
             try {
                 $tableName = _DB_PREFIX_ . $pattern;
 
-                // Check if table exists
+                // Check if table exists using information_schema (PS 8.x compatible)
                 $tableExists = Db::getInstance()->executeS(
-                    "SHOW TABLES LIKE '" . pSQL($tableName) . "'"
+                    "SELECT TABLE_NAME FROM information_schema.TABLES
+                     WHERE TABLE_SCHEMA = DATABASE()
+                     AND TABLE_NAME = '" . pSQL($tableName) . "'"
                 );
 
                 if (!empty($tableExists)) {
@@ -2532,8 +2534,10 @@ class ProSEOMaster extends Module
      */
     protected function getCurrentUrl()
     {
-        $protocol = Configuration::get('PS_SSL_ENABLED') ? 'https://' : 'http://';
-        return $protocol . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'];
+        $protocol = Tools::usingSecureMode() ? 'https://' : 'http://';
+        $host = Tools::getHttpHost(false, true);
+        $requestUri = Tools::getValue('REQUEST_URI', isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '/');
+        return $protocol . $host . $requestUri;
     }
 
     /**
@@ -2683,7 +2687,7 @@ class ProSEOMaster extends Module
         }
 
         // Check URL for payment module routes
-        $requestUri = isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '';
+        $requestUri = Tools::getValue('REQUEST_URI', isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '');
         if (preg_match('/(checkout|payment|pay|order|cart|module.*pay)/i', $requestUri)) {
             return true;
         }
@@ -3133,7 +3137,8 @@ class ProSEOMaster extends Module
         if (http_response_code() !== 404) {
             // Check if URL exists in redirects anyway
             $redirects = new ProSEOMasterRedirects();
-            $redirect = $redirects->getRedirect($_SERVER['REQUEST_URI']);
+            $requestUri = isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '';
+            $redirect = $redirects->getRedirect($requestUri);
 
             if ($redirect) {
                 $newUrl = $redirect['new_url'];

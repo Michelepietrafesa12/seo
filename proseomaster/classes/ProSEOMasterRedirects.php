@@ -484,7 +484,7 @@ class ProSEOMasterRedirects
      */
     public function processRedirect()
     {
-        $requestUri = $_SERVER['REQUEST_URI'];
+        $requestUri = isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '';
         $redirect = $this->getRedirect($requestUri);
 
         if ($redirect) {

@@ -231,10 +231,43 @@ class ProSEOMasterRobots
      */
     public function saveRobotsTxt()
     {
-        $content = $this->generateRobotsTxt();
-        $filepath = _PS_ROOT_DIR_ . '/robots.txt';
+        try {
+            $content = $this->generateRobotsTxt();
+            $filepath = _PS_ROOT_DIR_ . '/robots.txt';
 
-        return (bool) file_put_contents($filepath, $content);
+            // Check if directory is writable
+            if (!is_writable(dirname($filepath))) {
+                PrestaShopLogger::addLog(
+                    'ProSEOMaster: Cannot write robots.txt - directory not writable',
+                    3,
+                    null,
+                    'ProSEOMaster'
+                );
+                return false;
+            }
+
+            $result = file_put_contents($filepath, $content);
+
+            if ($result === false) {
+                PrestaShopLogger::addLog(
+                    'ProSEOMaster: Failed to save robots.txt',
+                    3,
+                    null,
+                    'ProSEOMaster'
+                );
+                return false;
+            }
+
+            return true;
+        } catch (Exception $e) {
+            PrestaShopLogger::addLog(
+                'ProSEOMaster: robots.txt error - ' . $e->getMessage(),
+                3,
+                null,
+                'ProSEOMaster'
+            );
+            return false;
+        }
     }
 
     /**
@@ -243,13 +276,23 @@ class ProSEOMasterRobots
      */
     public function getCurrentRobotsTxt()
     {
-        $filepath = _PS_ROOT_DIR_ . '/robots.txt';
+        try {
+            $filepath = _PS_ROOT_DIR_ . '/robots.txt';
 
-        if (file_exists($filepath)) {
-            return file_get_contents($filepath);
+            if (file_exists($filepath) && is_readable($filepath)) {
+                return file_get_contents($filepath);
+            }
+
+            return null;
+        } catch (Exception $e) {
+            PrestaShopLogger::addLog(
+                'ProSEOMaster: Error reading robots.txt - ' . $e->getMessage(),
+                2,
+                null,
+                'ProSEOMaster'
+            );
+            return null;
         }
-
-        return null;
     }
 
     /**
