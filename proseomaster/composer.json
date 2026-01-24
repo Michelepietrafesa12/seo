@@ -17,6 +17,9 @@
         "classmap": [
             "proseomaster.php",
             "classes/"
+        ],
+        "files": [
+            "autoload.php"
         ]
     },
     "require": {

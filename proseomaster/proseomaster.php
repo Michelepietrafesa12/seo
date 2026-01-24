@@ -14,23 +14,8 @@ if (!defined('_PS_VERSION_')) {
     exit;
 }
 
-// Manual autoloader for namespaced classes (src/)
-spl_autoload_register(function ($class) {
-    $prefix = 'ProSEOMaster\\';
-    $baseDir = dirname(__FILE__) . '/src/';
-
-    $len = strlen($prefix);
-    if (strncmp($prefix, $class, $len) !== 0) {
-        return;
-    }
-
-    $relativeClass = substr($class, $len);
-    $file = $baseDir . str_replace('\\', '/', $relativeClass) . '.php';
-
-    if (file_exists($file)) {
-        require_once $file;
-    }
-});
+// Include PSR-4 autoloader for namespaced classes (src/)
+require_once dirname(__FILE__) . '/autoload.php';
 
 // Include helper classes
 require_once dirname(__FILE__) . '/classes/ProSEOMasterHelper.php';

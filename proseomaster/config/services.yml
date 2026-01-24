@@ -1,29 +1,12 @@
 # ProSEO Master - Service Configuration
 # PrestaShop 8.x Symfony DI
+# Note: Main configuration uses getContent() for better compatibility
 
 services:
     _defaults:
         public: true
+        autowire: false
+        autoconfigure: false
 
-    # Admin Controller - must be registered as service for Symfony routing
-    ProSEOMaster\Controller\Admin\ProSEOMasterController:
-        class: ProSEOMaster\Controller\Admin\ProSEOMasterController
-        public: true
-        tags: ['controller.service_arguments']
-
-    # Form Type - registered without parent to avoid autowire inheritance issues
-    ProSEOMaster\Form\GeneralSettingsType:
-        class: ProSEOMaster\Form\GeneralSettingsType
-        public: true
-        arguments:
-            - '@translator'
-            - []
-        tags:
-            - { name: form.type }
-
-    # Form Handlers
-    proseomaster.form.handler.general_settings:
-        class: ProSEOMaster\Form\GeneralSettingsFormHandler
-        public: true
-        arguments:
-            - '@form.factory'
+    # Services can be added here for future Symfony integration
+    # Currently the module uses getContent() for the main admin interface
