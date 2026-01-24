@@ -319,7 +319,7 @@ class ProSEOMasterLinkChecker
 
         // Use cURL for checking
         $ch = curl_init();
-        curl_setopt_array($ch, array(
+        $curlOptions = array(
             CURLOPT_URL => $url,
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_HEADER => true,
@@ -327,10 +327,21 @@ class ProSEOMasterLinkChecker
             CURLOPT_FOLLOWLOCATION => false, // Don't follow redirects
             CURLOPT_TIMEOUT => $this->timeout,
             CURLOPT_CONNECTTIMEOUT => $this->timeout,
-            CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_SSL_VERIFYHOST => false,
             CURLOPT_USERAGENT => 'Mozilla/5.0 (compatible; ProSEOMaster/1.0; +' . $this->context->link->getBaseLink() . ')',
-        ));
+        );
+
+        // SSL verification - enable in production, use CA bundle if available
+        if (Configuration::get('PS_SSL_ENABLED') && file_exists(_PS_TOOL_DIR_ . 'cacert.pem')) {
+            $curlOptions[CURLOPT_SSL_VERIFYPEER] = true;
+            $curlOptions[CURLOPT_SSL_VERIFYHOST] = 2;
+            $curlOptions[CURLOPT_CAINFO] = _PS_TOOL_DIR_ . 'cacert.pem';
+        } else {
+            // Fallback for environments without CA bundle
+            $curlOptions[CURLOPT_SSL_VERIFYPEER] = false;
+            $curlOptions[CURLOPT_SSL_VERIFYHOST] = 0;
+        }
+
+        curl_setopt_array($ch, $curlOptions);
 
         $response = curl_exec($ch);
         $result['code'] = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);

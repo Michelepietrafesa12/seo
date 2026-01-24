@@ -3323,6 +3323,28 @@ class ProSEOMaster extends Module
             return $this->displayError($this->l('Please upload a valid CSV file.'));
         }
 
+        // Validate file size (max 5MB)
+        $maxSize = 5 * 1024 * 1024;
+        if ($_FILES['redirect_csv']['size'] > $maxSize) {
+            return $this->displayError($this->l('File size exceeds maximum allowed (5MB).'));
+        }
+
+        // Validate file extension
+        $allowedExtensions = array('csv', 'txt');
+        $fileExt = strtolower(pathinfo($_FILES['redirect_csv']['name'], PATHINFO_EXTENSION));
+        if (!in_array($fileExt, $allowedExtensions)) {
+            return $this->displayError($this->l('Invalid file type. Only CSV and TXT files are allowed.'));
+        }
+
+        // Validate MIME type
+        $allowedMimeTypes = array('text/plain', 'text/csv', 'application/csv', 'application/vnd.ms-excel');
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $mimeType = finfo_file($finfo, $_FILES['redirect_csv']['tmp_name']);
+        finfo_close($finfo);
+        if (!in_array($mimeType, $allowedMimeTypes)) {
+            return $this->displayError($this->l('Invalid file MIME type. Only CSV files are allowed.'));
+        }
+
         $csvContent = file_get_contents($_FILES['redirect_csv']['tmp_name']);
         $redirects = new ProSEOMasterRedirects();
         $results = $redirects->importFromCsv($csvContent);
@@ -4269,6 +4291,28 @@ class ProSEOMaster extends Module
     {
         if (!isset($_FILES['seo_import_csv']) || $_FILES['seo_import_csv']['error'] !== UPLOAD_ERR_OK) {
             return $this->displayError($this->l('Please upload a valid CSV file.'));
+        }
+
+        // Validate file size (max 5MB)
+        $maxSize = 5 * 1024 * 1024;
+        if ($_FILES['seo_import_csv']['size'] > $maxSize) {
+            return $this->displayError($this->l('File size exceeds maximum allowed (5MB).'));
+        }
+
+        // Validate file extension
+        $allowedExtensions = array('csv', 'txt');
+        $fileExt = strtolower(pathinfo($_FILES['seo_import_csv']['name'], PATHINFO_EXTENSION));
+        if (!in_array($fileExt, $allowedExtensions)) {
+            return $this->displayError($this->l('Invalid file type. Only CSV and TXT files are allowed.'));
+        }
+
+        // Validate MIME type
+        $allowedMimeTypes = array('text/plain', 'text/csv', 'application/csv', 'application/vnd.ms-excel');
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $mimeType = finfo_file($finfo, $_FILES['seo_import_csv']['tmp_name']);
+        finfo_close($finfo);
+        if (!in_array($mimeType, $allowedMimeTypes)) {
+            return $this->displayError($this->l('Invalid file MIME type. Only CSV files are allowed.'));
         }
 
         $csvContent = file_get_contents($_FILES['seo_import_csv']['tmp_name']);

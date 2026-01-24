@@ -32,7 +32,7 @@ class ProSEOMasterRedirects
     public function __construct($idShop = null)
     {
         $this->context = Context::getContext();
-        $this->idShop = $idShop !== null ? (int) $idShop : (int) $this->idShop;
+        $this->idShop = $idShop !== null ? (int) $idShop : (int) Context::getContext()->shop->id;
     }
 
     /**
@@ -129,7 +129,7 @@ class ProSEOMasterRedirects
         ));
 
         if ($result) {
-            return (int) Db::getInstance()->Insert_ID();
+            return (int) Db::getInstance()->insertId();
         }
 
         return false;
@@ -557,6 +557,6 @@ class ProSEOMasterRedirects
              AND date_add < "' . pSQL($cutoffDate) . '"'
         );
 
-        return $result ? Db::getInstance()->Affected_Rows() : 0;
+        return $result ? Db::getInstance()->affectedRows() : 0;
     }
 }

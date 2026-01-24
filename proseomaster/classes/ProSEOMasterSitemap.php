@@ -382,7 +382,7 @@ class ProSEOMasterSitemap
         $sql->where('ps.visibility IN ("both", "catalog", "search")');
         $sql->orderBy('p.date_upd DESC');
 
-        return Db::getInstance(_PS_USE_SQL_SLAVE_)->executeS($sql);
+        return Db::getInstance()->executeS($sql);
     }
 
     /**
@@ -400,7 +400,7 @@ class ProSEOMasterSitemap
         $sql->where('c.active = 1');
         $sql->orderBy('c.level_depth ASC, c.nleft ASC');
 
-        return Db::getInstance(_PS_USE_SQL_SLAVE_)->executeS($sql);
+        return Db::getInstance()->executeS($sql);
     }
 
     /**
@@ -606,7 +606,7 @@ class ProSEOMasterSitemap
         $sql->where('ps.active = 1');
         $sql->where('(pl.description LIKE "%youtube%" OR pl.description LIKE "%vimeo%" OR pl.description LIKE "%<video%" OR pl.description LIKE "%dailymotion%" OR pl.description LIKE "%wistia%")');
 
-        return Db::getInstance(_PS_USE_SQL_SLAVE_)->executeS($sql);
+        return Db::getInstance()->executeS($sql);
     }
 
     /**
@@ -734,6 +734,17 @@ class ProSEOMasterSitemap
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_TIMEOUT, 10);
         curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+
+        // SSL verification - enable in production with CA bundle
+        if (Configuration::get('PS_SSL_ENABLED') && file_exists(_PS_TOOL_DIR_ . 'cacert.pem')) {
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+            curl_setopt($ch, CURLOPT_CAINFO, _PS_TOOL_DIR_ . 'cacert.pem');
+        } else {
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
+        }
+
         curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
