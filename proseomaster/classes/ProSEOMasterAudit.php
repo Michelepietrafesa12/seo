@@ -521,23 +521,6 @@ class ProSEOMasterAudit
     }
 
     /**
-     * Calculate overall SEO score
-     * @return int
-     */
-    protected function calculateSeoScore()
-    {
-        $score = 100;
-
-        // Deduct points for issues
-        $score -= $this->issueCounts['critical'] * 15;
-        $score -= $this->issueCounts['warning'] * 5;
-        $score -= $this->issueCounts['notice'] * 2;
-
-        // Ensure score is between 0 and 100
-        return max(0, min(100, $score));
-    }
-
-    /**
      * Get score label based on score value
      * @param int $score
      * @return string
