@@ -12,10 +12,12 @@ services:
         class: ProSEOMaster\Controller\Admin\ProSEOMasterController
         tags: ['controller.service_arguments']
 
-    # Form Types
+    # Form Types - Note: parent services cannot inherit autowire from _defaults
     ProSEOMaster\Form\GeneralSettingsType:
         class: ProSEOMaster\Form\GeneralSettingsType
         parent: 'form.type.translatable.aware'
+        autowire: false
+        autoconfigure: false
         public: true
         tags:
             - { name: form.type }
