@@ -2,7 +2,7 @@
 /**
  * ProSEOMaster - Professional SEO Module for PrestaShop 1.7
  *
- * @author      SEO Expert
+ * @author      Michele Pietrafesa
  * @copyright   2024
  * @license     MIT
  */

@@ -4,7 +4,7 @@
  *
  * Symfony Form for module configuration
  *
- * @author      SEO Expert
+ * @author      Michele Pietrafesa
  * @copyright   2024
  * @license     MIT
  */

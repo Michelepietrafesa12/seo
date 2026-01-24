@@ -8,7 +8,7 @@
  * - URL structure changes
  * - Import/Export CSV functionality
  *
- * @author      SEO Expert
+ * @author      Michele Pietrafesa
  * @copyright   2024
  * @license     MIT
  * @version     1.0.0

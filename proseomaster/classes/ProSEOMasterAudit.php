@@ -10,7 +10,7 @@
  * - Internal linking analysis
  * - Product data completeness
  *
- * @author      SEO Expert
+ * @author      Michele Pietrafesa
  * @copyright   2024
  * @license     MIT
  */

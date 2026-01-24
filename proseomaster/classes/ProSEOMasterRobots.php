@@ -8,7 +8,7 @@
  * - Crawl-delay for bots
  * - Blocking of low-value URLs
  *
- * @author      SEO Expert
+ * @author      Michele Pietrafesa
  * @copyright   2024
  * @license     MIT
  */

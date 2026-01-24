@@ -2,7 +2,7 @@
 /**
  * ProSEOMaster - Upgrade script for version 1.1.0
  *
- * @author      SEO Expert
+ * @author      Michele Pietrafesa
  * @copyright   2024
  * @license     MIT
  */

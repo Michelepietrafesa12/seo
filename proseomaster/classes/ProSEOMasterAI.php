@@ -16,7 +16,7 @@
  * - Structured content for AI crawlers
  * - Knowledge graph optimization
  *
- * @author      SEO Expert
+ * @author      Michele Pietrafesa
  * @copyright   2024
  * @license     MIT
  */

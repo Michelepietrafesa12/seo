@@ -9,7 +9,7 @@
  * - Proper changefreq based on update patterns
  * - Automatic sitemap index for large catalogs
  *
- * @author      SEO Expert
+ * @author      Michele Pietrafesa
  * @copyright   2024
  * @license     MIT
  */

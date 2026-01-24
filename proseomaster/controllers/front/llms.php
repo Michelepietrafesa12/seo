@@ -4,7 +4,7 @@
  *
  * Serves llms.txt and llms-full.txt files for AI crawlers
  *
- * @author      SEO Expert
+ * @author      Michele Pietrafesa
  * @copyright   2024
  * @license     MIT
  */

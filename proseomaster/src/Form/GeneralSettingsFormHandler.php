@@ -4,7 +4,7 @@
  *
  * Handles form data retrieval and saving for module configuration
  *
- * @author      SEO Expert
+ * @author      Michele Pietrafesa
  * @copyright   2024
  * @license     MIT
  */

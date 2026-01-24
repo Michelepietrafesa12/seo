@@ -9,7 +9,7 @@
  * - INP (Interaction to Next Paint) optimization
  * - TTFB (Time to First Byte) optimization
  *
- * @author      SEO Expert
+ * @author      Michele Pietrafesa
  * @copyright   2024
  * @license     MIT
  */

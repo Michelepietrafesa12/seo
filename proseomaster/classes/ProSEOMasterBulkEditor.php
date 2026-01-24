@@ -7,7 +7,7 @@
  * - Export SEO data to CSV/Excel
  * - Import meta tags from CSV
  *
- * @author      SEO Expert
+ * @author      Michele Pietrafesa
  * @copyright   2024
  * @license     MIT
  * @version     1.0.0

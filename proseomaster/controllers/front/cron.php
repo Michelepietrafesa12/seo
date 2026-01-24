@@ -5,7 +5,7 @@
  * Handles automated sitemap generation via cron job
  * URL: /module/proseomaster/cron?action=sitemap&token=YOUR_TOKEN
  *
- * @author      SEO Expert
+ * @author      Michele Pietrafesa
  * @copyright   2024
  * @license     MIT
  */

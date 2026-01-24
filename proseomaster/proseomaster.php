@@ -4,7 +4,7 @@
  *
  * Modern Symfony-based admin controller with full PS 8.2 compatibility
  *
- * @author      SEO Expert
+ * @author      Michele Pietrafesa
  * @copyright   2024
  * @license     MIT
  * @version     2.5.0
@@ -106,7 +106,7 @@ class ProSEOMaster extends Module
         $this->name = 'proseomaster';
         $this->tab = 'seo';
         $this->version = '2.5.0';
-        $this->author = 'SEO Expert';
+        $this->author = 'Michele Pietrafesa';
         $this->need_instance = 0;
         $this->bootstrap = true;
         $this->ps_versions_compliancy = array('min' => '1.7.0.0', 'max' => _PS_VERSION_);

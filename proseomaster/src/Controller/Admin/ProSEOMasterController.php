@@ -4,7 +4,7 @@
  *
  * Modern PrestaShop 8.x compatible admin controller using Symfony framework
  *
- * @author      SEO Expert
+ * @author      Michele Pietrafesa
  * @copyright   2024
  * @license     MIT
  */
@@ -160,7 +160,7 @@ class ProSEOMasterController extends FrameworkBundleAdminController
         require_once _PS_MODULE_DIR_ . 'proseomaster/classes/ProSEOMasterRedirects.php';
 
         $redirects = new \ProSEOMasterRedirects();
-        $allRedirects = $redirects->getAllRedirects(100, 0);
+        $allRedirects = $redirects->getAllRedirects(false, 100, 0);
         $stats = $redirects->getStats();
 
         return $this->render('@Modules/proseomaster/views/templates/admin/redirects.html.twig', [
