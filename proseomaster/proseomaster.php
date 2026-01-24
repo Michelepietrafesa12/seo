@@ -14,10 +14,23 @@ if (!defined('_PS_VERSION_')) {
     exit;
 }
 
-// Composer autoloader for namespaced classes
-if (file_exists(dirname(__FILE__) . '/vendor/autoload.php')) {
-    require_once dirname(__FILE__) . '/vendor/autoload.php';
-}
+// Manual autoloader for namespaced classes (src/)
+spl_autoload_register(function ($class) {
+    $prefix = 'ProSEOMaster\\';
+    $baseDir = dirname(__FILE__) . '/src/';
+
+    $len = strlen($prefix);
+    if (strncmp($prefix, $class, $len) !== 0) {
+        return;
+    }
+
+    $relativeClass = substr($class, $len);
+    $file = $baseDir . str_replace('\\', '/', $relativeClass) . '.php';
+
+    if (file_exists($file)) {
+        require_once $file;
+    }
+});
 
 // Include helper classes
 require_once dirname(__FILE__) . '/classes/ProSEOMasterHelper.php';
@@ -32,8 +45,6 @@ require_once dirname(__FILE__) . '/classes/ProSEOMasterRedirects.php';
 require_once dirname(__FILE__) . '/classes/ProSEOMasterLinkChecker.php';
 require_once dirname(__FILE__) . '/classes/ProSEOMasterSchemaValidator.php';
 require_once dirname(__FILE__) . '/classes/ProSEOMasterBulkEditor.php';
-
-use PrestaShop\PrestaShop\Core\Module\WidgetInterface;
 
 class ProSEOMaster extends Module
 {
