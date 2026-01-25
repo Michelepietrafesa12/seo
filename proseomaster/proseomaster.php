@@ -105,7 +105,7 @@ class ProSEOMaster extends Module
         $this->author = 'Michele Pietrafesa';
         $this->need_instance = 0;
         $this->bootstrap = true;
-        $this->ps_versions_compliancy = array('min' => '1.7.0.0', 'max' => _PS_VERSION_);
+        $this->ps_versions_compliancy = array('min' => '8.0.0', 'max' => '8.99.99');
 
         parent::__construct();
 
