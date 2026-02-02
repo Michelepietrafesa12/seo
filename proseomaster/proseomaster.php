@@ -687,13 +687,22 @@ class ProSEOMaster extends Module
 
     /**
      * Process form submission
+     * Only saves fields that were actually submitted in the POST request
+     * to prevent resetting fields from other form sections
      * @return string
      */
     protected function postProcess()
     {
         $errors = array();
+        $savedCount = 0;
 
         foreach ($this->configFields as $field) {
+            // Only save fields that were actually submitted in this form
+            // This prevents resetting fields from other form sections
+            if (!Tools::getIsset($field)) {
+                continue;
+            }
+
             $value = Tools::getValue($field, '');
 
             // Sanitize values
@@ -712,10 +721,15 @@ class ProSEOMaster extends Module
             }
 
             Configuration::updateValue($field, pSQL($value));
+            $savedCount++;
         }
 
         if (!empty($errors)) {
             return $this->displayError(implode('<br>', $errors));
+        }
+
+        if ($savedCount === 0) {
+            return $this->displayWarning($this->l('No settings were modified.'));
         }
 
         return $this->displayConfirmation($this->l('Settings updated successfully'));
