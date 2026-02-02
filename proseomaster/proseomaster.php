@@ -1235,11 +1235,6 @@ class ProSEOMaster extends Module
 
         // --- SEO OPTIMIZATIONS ---
 
-        // Canonical URL - prevents duplicate content issues
-        if (Configuration::get('PROSEOMASTER_ENABLE_CANONICAL')) {
-            $output .= $this->generateCanonicalTag();
-        }
-
         // Noindex for filtered pages and deep pagination - prevents index bloat
         $output .= $this->generateRobotsMetaTag();
 
@@ -1285,18 +1280,31 @@ class ProSEOMaster extends Module
     }
 
     /**
-     * Generate canonical URL tag to prevent duplicate content
+     * Replace PrestaShop's canonical tag with our optimized version
+     * Strips filters, pagination, and sorting parameters to prevent duplicate content
+     * Operates on the full HTML to avoid duplicate canonical tags
+     * @param string $html
      * @return string
      */
-    protected function generateCanonicalTag()
+    protected function replaceCanonicalTag($html)
     {
         $canonicalUrl = $this->getCanonicalUrl();
         if (empty($canonicalUrl)) {
-            return '';
+            return $html;
         }
 
-        return '<!-- ProSEO Master: Canonical -->' . "\n" .
-               '<link rel="canonical" href="' . htmlspecialchars($canonicalUrl, ENT_QUOTES, 'UTF-8') . '" />' . "\n";
+        $newCanonical = '<link rel="canonical" href="' . htmlspecialchars($canonicalUrl, ENT_QUOTES, 'UTF-8') . '" />';
+
+        // Replace existing canonical tag if present
+        $pattern = '/<link[^>]*rel=["\']canonical["\'][^>]*>/i';
+        if (preg_match($pattern, $html)) {
+            $html = preg_replace($pattern, $newCanonical, $html, 1);
+        } else {
+            // No existing canonical - add before </head>
+            $html = str_replace('</head>', $newCanonical . "\n</head>", $html);
+        }
+
+        return $html;
     }
 
     /**
@@ -3012,6 +3020,12 @@ class ProSEOMaster extends Module
         if (Configuration::get('PROSEOMASTER_ENABLE_RESOURCE_HINTS') && !$isCheckoutPage) {
             $performanceScript = $performance->getPerformanceScript();
             $html = str_replace('</body>', $performanceScript . "\n</body>", $html);
+        }
+
+        // 8. Replace canonical URL with our optimized version (strips filters, pagination params)
+        // This REPLACES PrestaShop's canonical instead of adding a duplicate
+        if (Configuration::get('PROSEOMASTER_ENABLE_CANONICAL')) {
+            $html = $this->replaceCanonicalTag($html);
         }
 
         $params['html'] = $html;
