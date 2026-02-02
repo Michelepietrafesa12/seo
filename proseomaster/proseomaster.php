@@ -1235,6 +1235,14 @@ class ProSEOMaster extends Module
 
         // --- SEO OPTIMIZATIONS ---
 
+        // Canonical URL - prevents duplicate content issues
+        if (Configuration::get('PROSEOMASTER_ENABLE_CANONICAL')) {
+            $output .= $this->generateCanonicalTag();
+        }
+
+        // Noindex for filtered pages and deep pagination - prevents index bloat
+        $output .= $this->generateRobotsMetaTag();
+
         // Add Open Graph and Twitter Card meta tags
         $output .= $this->generateSocialMetaTags();
 
@@ -1274,6 +1282,175 @@ class ProSEOMaster extends Module
             default:
                 return 'default';
         }
+    }
+
+    /**
+     * Generate canonical URL tag to prevent duplicate content
+     * @return string
+     */
+    protected function generateCanonicalTag()
+    {
+        $canonicalUrl = $this->getCanonicalUrl();
+        if (empty($canonicalUrl)) {
+            return '';
+        }
+
+        return '<!-- ProSEO Master: Canonical -->' . "\n" .
+               '<link rel="canonical" href="' . htmlspecialchars($canonicalUrl, ENT_QUOTES, 'UTF-8') . '" />' . "\n";
+    }
+
+    /**
+     * Get the canonical URL for the current page
+     * Strips query parameters that create duplicate content (filters, pagination, sorting, etc.)
+     * @return string
+     */
+    protected function getCanonicalUrl()
+    {
+        $controller = $this->context->controller;
+        $page = $controller->getPageName();
+        $link = $this->context->link;
+
+        switch ($page) {
+            case 'product':
+                if (isset($this->context->smarty->tpl_vars['product'])) {
+                    $product = $this->context->smarty->tpl_vars['product']->value ?? array();
+                    if (is_array($product) && isset($product['id_product'])) {
+                        return $link->getProductLink(
+                            (int) $product['id_product'],
+                            null,
+                            null,
+                            null,
+                            $this->context->language->id
+                        );
+                    }
+                }
+                break;
+
+            case 'category':
+                if (isset($this->context->smarty->tpl_vars['category'])) {
+                    $category = $this->context->smarty->tpl_vars['category']->value ?? null;
+                    if (is_object($category)) {
+                        // Canonical points to page 1 without filters
+                        return $link->getCategoryLink(
+                            (int) $category->id,
+                            null,
+                            $this->context->language->id
+                        );
+                    }
+                }
+                break;
+
+            case 'cms':
+                $idCms = Tools::getValue('id_cms');
+                if ($idCms) {
+                    return $link->getCMSLink((int) $idCms, null, null, $this->context->language->id);
+                }
+                break;
+
+            case 'manufacturer':
+                $idManufacturer = Tools::getValue('id_manufacturer');
+                if ($idManufacturer) {
+                    return $link->getManufacturerLink((int) $idManufacturer, null, $this->context->language->id);
+                }
+                break;
+
+            case 'supplier':
+                $idSupplier = Tools::getValue('id_supplier');
+                if ($idSupplier) {
+                    return $link->getSupplierLink((int) $idSupplier, null, $this->context->language->id);
+                }
+                break;
+
+            case 'index':
+                return $link->getPageLink('index', true, $this->context->language->id);
+
+            default:
+                // For other pages, use the clean page URL without query params
+                return $link->getPageLink($page, true, $this->context->language->id);
+        }
+
+        return '';
+    }
+
+    /**
+     * Generate robots meta tag for noindex directives
+     * Handles filtered pages and deep pagination to prevent index bloat
+     * @return string
+     */
+    protected function generateRobotsMetaTag()
+    {
+        $noindex = false;
+        $reasons = array();
+
+        $controller = $this->context->controller;
+        $page = $controller->getPageName();
+
+        // 1. Noindex filtered category pages (faceted navigation = duplicate content)
+        if (Configuration::get('PROSEOMASTER_NOINDEX_FILTERED_PAGES') && $page === 'category') {
+            if ($this->hasActiveFilters()) {
+                $noindex = true;
+                $reasons[] = 'filtered';
+            }
+        }
+
+        // 2. Noindex deep pagination (pages beyond 5)
+        if (Configuration::get('PROSEOMASTER_NOINDEX_DEEP_PAGINATION')) {
+            $currentPage = (int) Tools::getValue('p', 1);
+            if ($currentPage > 5) {
+                $noindex = true;
+                $reasons[] = 'pagination-p' . $currentPage;
+            }
+        }
+
+        // 3. Always noindex search results pages
+        if (in_array($page, array('search', 'pagenotfound', '404'))) {
+            $noindex = true;
+            $reasons[] = $page;
+        }
+
+        if (!$noindex) {
+            return '';
+        }
+
+        return '<!-- ProSEO Master: Robots (' . implode(', ', $reasons) . ') -->' . "\n" .
+               '<meta name="robots" content="noindex, follow" />' . "\n";
+    }
+
+    /**
+     * Check if current category page has active filters
+     * Detects faceted navigation parameters (price, color, size, etc.)
+     * @return bool
+     */
+    protected function hasActiveFilters()
+    {
+        // Check common filter parameters from PrestaShop faceted search
+        $filterParams = array(
+            'q', 'tag',                                     // Search/tag filters
+            'id_attribute', 'id_attribute_group',           // Attribute filters
+            'id_feature', 'id_feature_value',               // Feature filters
+            'price', 'price_min', 'price_max',              // Price range
+            'weight', 'weight_min', 'weight_max',           // Weight range
+            'color', 'size', 'material',                    // Common attribute names
+        );
+
+        foreach ($filterParams as $param) {
+            if (Tools::getIsset($param) && Tools::getValue($param) !== '') {
+                return true;
+            }
+        }
+
+        // Check for ps_facetedsearch module parameters (layered navigation)
+        $requestUri = isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '';
+        if (preg_match('/\/filter-/', $requestUri) || preg_match('/[?&](selected_filters|layered_)/', $requestUri)) {
+            return true;
+        }
+
+        // Check for common filter modules URL patterns
+        if (preg_match('/[?&](from|to|min|max|orderby|orderway|n=\d+)/', $requestUri)) {
+            return true;
+        }
+
+        return false;
     }
 
     /**
@@ -1537,6 +1714,14 @@ class ProSEOMaster extends Module
             $itemListSchema = $this->generateItemListSchema();
             if ($itemListSchema) {
                 $schemas[] = $itemListSchema;
+            }
+        }
+
+        // FAQ Schema from product features (generates rich FAQ snippets in SERP)
+        if ($page === 'product' && Configuration::get('PROSEOMASTER_ENABLE_FAQ_SCHEMA')) {
+            $faqSchema = $this->generateFAQSchema();
+            if ($faqSchema) {
+                $schemas[] = $faqSchema;
             }
         }
 
@@ -2575,6 +2760,143 @@ class ProSEOMaster extends Module
             'name' => $categoryName,
             'numberOfItems' => count($itemListElement),
             'itemListElement' => $itemListElement,
+        );
+    }
+
+    /**
+     * Generate FAQPage schema from product features
+     * Google shows FAQ rich snippets in search results, increasing CTR
+     * @return array|null
+     */
+    protected function generateFAQSchema()
+    {
+        if (!isset($this->context->smarty->tpl_vars['product'])) {
+            return null;
+        }
+
+        $productData = $this->context->smarty->tpl_vars['product']->value ?? array();
+        if (!is_array($productData) || empty($productData['id_product'])) {
+            return null;
+        }
+
+        $product = new Product((int) $productData['id_product'], true, $this->context->language->id);
+        if (!Validate::isLoadedObject($product)) {
+            return null;
+        }
+
+        $faqItems = array();
+
+        // 1. Generate FAQ from product features (Caratteristiche)
+        $features = $product->getFeatures();
+        foreach ($features as $feature) {
+            $featureName = new Feature($feature['id_feature'], $this->context->language->id);
+            $featureValue = new FeatureValue($feature['id_feature_value'], $this->context->language->id);
+
+            if (Validate::isLoadedObject($featureName) && Validate::isLoadedObject($featureValue)) {
+                $name = is_array($featureName->name) ? reset($featureName->name) : $featureName->name;
+                $value = is_array($featureValue->value) ? reset($featureValue->value) : $featureValue->value;
+
+                if (!empty($name) && !empty($value)) {
+                    $faqItems[] = array(
+                        '@type' => 'Question',
+                        'name' => $this->featureToQuestion($name, $product->name),
+                        'acceptedAnswer' => array(
+                            '@type' => 'Answer',
+                            'text' => $this->featureToAnswer($name, $value, $product->name),
+                        ),
+                    );
+                }
+            }
+        }
+
+        // 2. Add availability FAQ
+        $quantity = Product::getQuantity($product->id);
+        $faqItems[] = array(
+            '@type' => 'Question',
+            'name' => sprintf('Il prodotto %s è disponibile?', $product->name),
+            'acceptedAnswer' => array(
+                '@type' => 'Answer',
+                'text' => $quantity > 0
+                    ? sprintf('Sì, %s è attualmente disponibile e pronto per la spedizione.', $product->name)
+                    : sprintf('Al momento %s non è disponibile. Contattaci per informazioni sulla disponibilità.', $product->name),
+            ),
+        );
+
+        // 3. Add shipping FAQ if applicable
+        $faqItems[] = array(
+            '@type' => 'Question',
+            'name' => sprintf('Quali sono i tempi di spedizione per %s?', $product->name),
+            'acceptedAnswer' => array(
+                '@type' => 'Answer',
+                'text' => sprintf('La spedizione di %s avviene generalmente entro 1-2 giorni lavorativi dalla conferma dell\'ordine. I tempi di consegna variano in base alla destinazione.', $product->name),
+            ),
+        );
+
+        if (count($faqItems) < 2) {
+            return null;
+        }
+
+        return array(
+            '@context' => 'https://schema.org',
+            '@type' => 'FAQPage',
+            'mainEntity' => $faqItems,
+        );
+    }
+
+    /**
+     * Convert a product feature name into a natural question
+     * @param string $featureName
+     * @param string $productName
+     * @return string
+     */
+    protected function featureToQuestion($featureName, $productName)
+    {
+        $featureNameLower = strtolower($featureName);
+
+        // Map common feature names to natural questions
+        $questionMap = array(
+            'composizione' => 'Qual è la composizione di %s?',
+            'materiale' => 'Di che materiale è fatto %s?',
+            'peso' => 'Quanto pesa %s?',
+            'dimensioni' => 'Quali sono le dimensioni di %s?',
+            'colore' => 'Di che colore è %s?',
+            'taglia' => 'Quali taglie sono disponibili per %s?',
+            'garanzia' => 'Che garanzia ha %s?',
+            'origine' => 'Qual è il paese di origine di %s?',
+            'marca' => 'Di che marca è %s?',
+            'capacità' => 'Qual è la capacità di %s?',
+            'potenza' => 'Qual è la potenza di %s?',
+            'voltaggio' => 'Qual è il voltaggio di %s?',
+            'altezza' => 'Qual è l\'altezza di %s?',
+            'larghezza' => 'Qual è la larghezza di %s?',
+            'profondità' => 'Qual è la profondità di %s?',
+            'lunghezza' => 'Qual è la lunghezza di %s?',
+        );
+
+        foreach ($questionMap as $key => $question) {
+            if (strpos($featureNameLower, $key) !== false) {
+                return sprintf($question, $productName);
+            }
+        }
+
+        // Default question format
+        return sprintf('Qual è il/la %s di %s?', strtolower($featureName), $productName);
+    }
+
+    /**
+     * Convert a product feature into a natural answer
+     * @param string $featureName
+     * @param string $featureValue
+     * @param string $productName
+     * @return string
+     */
+    protected function featureToAnswer($featureName, $featureValue, $productName)
+    {
+        return sprintf(
+            'Il/La %s di %s è: %s.',
+            strtolower($featureName),
+            $productName,
+            $featureValue
         );
     }
 
