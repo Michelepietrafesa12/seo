@@ -68,6 +68,7 @@ class ProSEOMaster extends Module
         'PROSEOMASTER_GTIN_FIELD',
         'PROSEOMASTER_MPN_FIELD',
         'PROSEOMASTER_BRAND_FIELD',
+        'PROSEOMASTER_DEFAULT_BRAND',
         'PROSEOMASTER_CONDITION_FIELD',
         'PROSEOMASTER_ENABLE_FAQ_SCHEMA',
         'PROSEOMASTER_ENABLE_REVIEW_SCHEMA',
@@ -952,6 +953,12 @@ class ProSEOMaster extends Module
                                 'name' => 'name',
                             ),
                         ),
+                        array(
+                            'type' => 'text',
+                            'label' => $this->l('Default Brand Name'),
+                            'name' => 'PROSEOMASTER_DEFAULT_BRAND',
+                            'desc' => $this->l('Fallback brand name when product has no manufacturer/supplier (e.g., "Self Omninutrition"). Leave empty to use shop name.'),
+                        ),
                     ),
                     'submit' => array(
                         'title' => $this->l('Save'),
@@ -1514,7 +1521,24 @@ class ProSEOMaster extends Module
             $product = $this->context->smarty->tpl_vars['product']->value ?? array();
             if (is_array($product)) {
                 $title = $product['name'] ?? $title;
-                $description = strip_tags($product['description_short'] ?? $description);
+
+                // Description fallback chain for products
+                if (!empty($product['description_short'])) {
+                    $description = strip_tags($product['description_short']);
+                } elseif (!empty($product['description'])) {
+                    $description = strip_tags($product['description']);
+                    if (strlen($description) > 200) {
+                        $description = substr($description, 0, 197) . '...';
+                    }
+                } elseif (!empty($product['name'])) {
+                    // Generate description from product name
+                    $description = sprintf(
+                        $this->l('Buy %s online at %s'),
+                        $product['name'],
+                        $siteName
+                    );
+                }
+
                 if (!empty($product['cover']['large']['url'])) {
                     $image = $product['cover']['large']['url'];
                 }
@@ -2217,8 +2241,38 @@ class ProSEOMaster extends Module
             'url' => $productUrl,
         );
 
-        // Description
-        $description = strip_tags($product->description_short);
+        // Description - with fallback chain
+        $description = '';
+
+        // 1. Try short description first
+        if (!empty($product->description_short)) {
+            $description = strip_tags($product->description_short);
+        }
+
+        // 2. Fallback to full description (truncated)
+        if (empty($description) && !empty($product->description)) {
+            $description = strip_tags($product->description);
+            // Truncate to 300 chars for schema
+            if (strlen($description) > 300) {
+                $description = substr($description, 0, 297) . '...';
+            }
+        }
+
+        // 3. Final fallback: generate from product name + category
+        if (empty($description)) {
+            $category = new Category((int) $product->id_category_default, $this->context->language->id);
+            if (Validate::isLoadedObject($category)) {
+                $description = sprintf(
+                    $this->l('%s - %s available at %s'),
+                    $product->name,
+                    $category->name,
+                    Configuration::get('PS_SHOP_NAME')
+                );
+            } else {
+                $description = $product->name . ' - ' . Configuration::get('PS_SHOP_NAME');
+            }
+        }
+
         if (!empty($description)) {
             $schema['description'] = $this->cleanText($description);
         }
@@ -2667,7 +2721,12 @@ class ProSEOMaster extends Module
                 return Configuration::get('PS_SHOP_NAME');
         }
 
-        // Fallback to shop name if no brand found (required by Google)
+        // Fallback: use custom default brand, then shop name (required by Google)
+        $defaultBrand = Configuration::get('PROSEOMASTER_DEFAULT_BRAND');
+        if (!empty($defaultBrand)) {
+            return $defaultBrand;
+        }
+
         return Configuration::get('PS_SHOP_NAME');
     }
 
