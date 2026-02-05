@@ -28,33 +28,21 @@ class ProSEOMasterController extends FrameworkBundleAdminController
 {
     /**
      * Main configuration page
+     * Redirects to module's getContent() configuration page for full functionality
      *
      * @param Request $request
      * @return Response
      */
     public function indexAction(Request $request): Response
     {
-        $formHandler = $this->get('proseomaster.form.handler.general_settings');
-        $form = $formHandler->getForm();
-        $form->handleRequest($request);
-
-        if ($form->isSubmitted() && $form->isValid()) {
-            $errors = $formHandler->save($form->getData());
-
-            if (empty($errors)) {
-                $this->addFlash('success', $this->trans('Settings updated successfully.', 'Modules.Proseomaster.Admin'));
-            } else {
-                $this->flashErrors($errors);
-            }
-
-            return $this->redirectToRoute('proseomaster_configuration');
-        }
-
-        return $this->render('@Modules/proseomaster/views/templates/admin/configuration.html.twig', [
-            'form' => $form->createView(),
-            'moduleVersion' => \Module::getInstanceByName('proseomaster')->version,
-            'help_link' => false,
+        // Redirect to the module's legacy configuration page (getContent)
+        // which provides full functionality and compatibility
+        $adminLink = Context::getContext()->link->getAdminLink('AdminModules', true, [], [
+            'configure' => 'proseomaster',
+            'module_name' => 'proseomaster',
         ]);
+
+        return $this->redirect($adminLink);
     }
 
     /**

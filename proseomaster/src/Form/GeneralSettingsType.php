@@ -33,22 +33,27 @@ class GeneralSettingsType extends TranslatorAwareType
     public function buildForm(FormBuilderInterface $builder, array $options): void
     {
         $builder
-            // Meta Tags Settings
-            ->add('enable_meta_optimization', SwitchType::class, [
-                'label' => $this->trans('Enable Meta Optimization', 'Modules.Proseomaster.Admin'),
-                'help' => $this->trans('Automatically optimize meta titles and descriptions', 'Modules.Proseomaster.Admin'),
+            // Schema Markup Settings
+            ->add('enable_product_schema', SwitchType::class, [
+                'label' => $this->trans('Enable Product Schema', 'Modules.Proseomaster.Admin'),
+                'help' => $this->trans('Add JSON-LD Product structured data', 'Modules.Proseomaster.Admin'),
                 'required' => false,
             ])
-            ->add('meta_title_template', TextType::class, [
-                'label' => $this->trans('Meta Title Template', 'Modules.Proseomaster.Admin'),
+            ->add('enable_organization_schema', SwitchType::class, [
+                'label' => $this->trans('Enable Organization Schema', 'Modules.Proseomaster.Admin'),
+                'help' => $this->trans('Add JSON-LD Organization structured data', 'Modules.Proseomaster.Admin'),
+                'required' => false,
+            ])
+            ->add('product_title_template', TextType::class, [
+                'label' => $this->trans('Product Title Template', 'Modules.Proseomaster.Admin'),
                 'help' => $this->trans('Use {product_name}, {category}, {brand}, {shop_name}', 'Modules.Proseomaster.Admin'),
                 'required' => false,
                 'constraints' => [
                     new Length(['max' => 200]),
                 ],
             ])
-            ->add('meta_description_template', TextareaType::class, [
-                'label' => $this->trans('Meta Description Template', 'Modules.Proseomaster.Admin'),
+            ->add('product_desc_template', TextareaType::class, [
+                'label' => $this->trans('Product Description Template', 'Modules.Proseomaster.Admin'),
                 'help' => $this->trans('Use {product_name}, {category}, {brand}, {price}', 'Modules.Proseomaster.Admin'),
                 'required' => false,
                 'constraints' => [
@@ -56,12 +61,7 @@ class GeneralSettingsType extends TranslatorAwareType
                 ],
             ])
 
-            // Structured Data
-            ->add('enable_schema', SwitchType::class, [
-                'label' => $this->trans('Enable Schema Markup', 'Modules.Proseomaster.Admin'),
-                'help' => $this->trans('Add JSON-LD structured data to pages', 'Modules.Proseomaster.Admin'),
-                'required' => false,
-            ])
+            // Social Media
             ->add('enable_og_tags', SwitchType::class, [
                 'label' => $this->trans('Enable Open Graph Tags', 'Modules.Proseomaster.Admin'),
                 'help' => $this->trans('Add Facebook/social media meta tags', 'Modules.Proseomaster.Admin'),
@@ -72,21 +72,21 @@ class GeneralSettingsType extends TranslatorAwareType
                 'help' => $this->trans('Add Twitter Card meta tags', 'Modules.Proseomaster.Admin'),
                 'required' => false,
             ])
+            ->add('enable_canonical', SwitchType::class, [
+                'label' => $this->trans('Enable Canonical URLs', 'Modules.Proseomaster.Admin'),
+                'help' => $this->trans('Add canonical URL meta tags', 'Modules.Proseomaster.Admin'),
+                'required' => false,
+            ])
 
             // Performance
-            ->add('enable_preload', SwitchType::class, [
-                'label' => $this->trans('Enable Resource Preloading', 'Modules.Proseomaster.Admin'),
-                'help' => $this->trans('Preload critical resources for faster page load', 'Modules.Proseomaster.Admin'),
+            ->add('enable_resource_hints', SwitchType::class, [
+                'label' => $this->trans('Enable Resource Hints', 'Modules.Proseomaster.Admin'),
+                'help' => $this->trans('Preconnect and DNS prefetch for external resources', 'Modules.Proseomaster.Admin'),
                 'required' => false,
             ])
-            ->add('enable_lazy_images', SwitchType::class, [
+            ->add('enable_lazy_loading', SwitchType::class, [
                 'label' => $this->trans('Enable Lazy Loading', 'Modules.Proseomaster.Admin'),
                 'help' => $this->trans('Lazy load images for better performance', 'Modules.Proseomaster.Admin'),
-                'required' => false,
-            ])
-            ->add('enable_dns_prefetch', SwitchType::class, [
-                'label' => $this->trans('Enable DNS Prefetch', 'Modules.Proseomaster.Admin'),
-                'help' => $this->trans('Prefetch DNS for external resources', 'Modules.Proseomaster.Admin'),
                 'required' => false,
             ])
 

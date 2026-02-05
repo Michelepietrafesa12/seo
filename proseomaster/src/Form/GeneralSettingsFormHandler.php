@@ -25,17 +25,17 @@ class GeneralSettingsFormHandler
     /** @var FormFactoryInterface */
     private $formFactory;
 
-    /** @var array Configuration field mappings */
+    /** @var array Configuration field mappings - must match keys in proseomaster.php */
     private const CONFIG_FIELDS = [
-        'enable_meta_optimization' => 'PROSEOMASTER_ENABLE_META_OPTIMIZATION',
-        'meta_title_template' => 'PROSEOMASTER_META_TITLE_TEMPLATE',
-        'meta_description_template' => 'PROSEOMASTER_META_DESCRIPTION_TEMPLATE',
-        'enable_schema' => 'PROSEOMASTER_ENABLE_SCHEMA',
+        'enable_product_schema' => 'PROSEOMASTER_ENABLE_PRODUCT_SCHEMA',
+        'product_title_template' => 'PROSEOMASTER_PRODUCT_TITLE_TEMPLATE',
+        'product_desc_template' => 'PROSEOMASTER_PRODUCT_DESC_TEMPLATE',
+        'enable_organization_schema' => 'PROSEOMASTER_ENABLE_ORGANIZATION_SCHEMA',
         'enable_og_tags' => 'PROSEOMASTER_ENABLE_OG_TAGS',
         'enable_twitter_cards' => 'PROSEOMASTER_ENABLE_TWITTER_CARDS',
-        'enable_preload' => 'PROSEOMASTER_ENABLE_PRELOAD',
-        'enable_lazy_images' => 'PROSEOMASTER_ENABLE_LAZY_IMAGES',
-        'enable_dns_prefetch' => 'PROSEOMASTER_ENABLE_DNS_PREFETCH',
+        'enable_resource_hints' => 'PROSEOMASTER_ENABLE_RESOURCE_HINTS',
+        'enable_lazy_loading' => 'PROSEOMASTER_ENABLE_LAZY_LOADING',
+        'enable_canonical' => 'PROSEOMASTER_ENABLE_CANONICAL',
         'enable_ai_seo' => 'PROSEOMASTER_ENABLE_AI_SEO',
         'enable_llms_txt' => 'PROSEOMASTER_ENABLE_LLMS_TXT',
     ];
