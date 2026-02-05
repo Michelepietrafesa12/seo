@@ -57,6 +57,7 @@ class ProSEOMaster extends Module
         'PROSEOMASTER_LOCAL_COUNTRY',
         'PROSEOMASTER_LOCAL_LAT',
         'PROSEOMASTER_LOCAL_LNG',
+        'PROSEOMASTER_LOCAL_HOURS',
         'PROSEOMASTER_BUSINESS_TYPE',
         'PROSEOMASTER_ENABLE_OG_TAGS',
         'PROSEOMASTER_ENABLE_TWITTER_CARDS',
@@ -1081,6 +1082,13 @@ class ProSEOMaster extends Module
                             'name' => 'PROSEOMASTER_LOCAL_LNG',
                             'class' => 'fixed-width-lg',
                         ),
+                        array(
+                            'type' => 'textarea',
+                            'label' => $this->l('Opening Hours'),
+                            'name' => 'PROSEOMASTER_LOCAL_HOURS',
+                            'desc' => $this->l('One per line. Format: Day HH:MM-HH:MM (e.g., Monday 09:00-18:00). Use "closed" for closed days (e.g., Sunday closed).'),
+                            'rows' => 7,
+                        ),
                     ),
                     'submit' => array(
                         'title' => $this->l('Save'),
@@ -1513,6 +1521,13 @@ class ProSEOMaster extends Module
             if (!empty($image)) {
                 $output .= '<meta property="og:image" content="' . htmlspecialchars($image, ENT_QUOTES, 'UTF-8') . '" />' . "\n";
                 $output .= '<meta property="og:image:alt" content="' . htmlspecialchars($title, ENT_QUOTES, 'UTF-8') . '" />' . "\n";
+
+                // Add image dimensions
+                $imageDimensions = $this->getImageDimensions($image, isset($product) && is_array($product) ? $product : null);
+                if (!empty($imageDimensions['width']) && !empty($imageDimensions['height'])) {
+                    $output .= '<meta property="og:image:width" content="' . (int) $imageDimensions['width'] . '" />' . "\n";
+                    $output .= '<meta property="og:image:height" content="' . (int) $imageDimensions['height'] . '" />' . "\n";
+                }
             }
 
             // Product-specific OG tags
@@ -1913,7 +1928,80 @@ class ProSEOMaster extends Module
             $schema['image'] = $logo;
         }
 
+        // Opening Hours
+        $hoursConfig = Configuration::get('PROSEOMASTER_LOCAL_HOURS');
+        if (!empty($hoursConfig)) {
+            $openingHours = $this->parseOpeningHours($hoursConfig);
+            if (!empty($openingHours)) {
+                $schema['openingHoursSpecification'] = $openingHours;
+            }
+        }
+
         return $schema;
+    }
+
+    /**
+     * Parse opening hours configuration into schema format
+     * @param string $hoursConfig
+     * @return array
+     */
+    protected function parseOpeningHours($hoursConfig)
+    {
+        $dayMap = array(
+            'monday' => 'Monday',
+            'tuesday' => 'Tuesday',
+            'wednesday' => 'Wednesday',
+            'thursday' => 'Thursday',
+            'friday' => 'Friday',
+            'saturday' => 'Saturday',
+            'sunday' => 'Sunday',
+            'mon' => 'Monday',
+            'tue' => 'Tuesday',
+            'wed' => 'Wednesday',
+            'thu' => 'Thursday',
+            'fri' => 'Friday',
+            'sat' => 'Saturday',
+            'sun' => 'Sunday',
+            // Italian
+            'lunedì' => 'Monday',
+            'lunedi' => 'Monday',
+            'martedì' => 'Tuesday',
+            'martedi' => 'Tuesday',
+            'mercoledì' => 'Wednesday',
+            'mercoledi' => 'Wednesday',
+            'giovedì' => 'Thursday',
+            'giovedi' => 'Thursday',
+            'venerdì' => 'Friday',
+            'venerdi' => 'Friday',
+            'sabato' => 'Saturday',
+            'domenica' => 'Sunday',
+        );
+
+        $specifications = array();
+        $lines = explode("\n", $hoursConfig);
+
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if (empty($line)) {
+                continue;
+            }
+
+            // Parse format: "Day HH:MM-HH:MM" or "Day closed"
+            if (preg_match('/^(\w+)\s+(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})$/i', $line, $matches)) {
+                $dayName = strtolower($matches[1]);
+                if (isset($dayMap[$dayName])) {
+                    $specifications[] = array(
+                        '@type' => 'OpeningHoursSpecification',
+                        'dayOfWeek' => $dayMap[$dayName],
+                        'opens' => $matches[2],
+                        'closes' => $matches[3],
+                    );
+                }
+            }
+            // Handle closed days - skip them (or could add with closes=opens)
+        }
+
+        return $specifications;
     }
 
     /**
@@ -2821,22 +2909,22 @@ class ProSEOMaster extends Module
         $quantity = Product::getQuantity($product->id);
         $faqItems[] = array(
             '@type' => 'Question',
-            'name' => sprintf('Il prodotto %s è disponibile?', $product->name),
+            'name' => sprintf($this->l('Is %s available?'), $product->name),
             'acceptedAnswer' => array(
                 '@type' => 'Answer',
                 'text' => $quantity > 0
-                    ? sprintf('Sì, %s è attualmente disponibile e pronto per la spedizione.', $product->name)
-                    : sprintf('Al momento %s non è disponibile. Contattaci per informazioni sulla disponibilità.', $product->name),
+                    ? sprintf($this->l('Yes, %s is currently available and ready to ship.'), $product->name)
+                    : sprintf($this->l('Currently %s is not available. Contact us for availability information.'), $product->name),
             ),
         );
 
         // 3. Add shipping FAQ if applicable
         $faqItems[] = array(
             '@type' => 'Question',
-            'name' => sprintf('Quali sono i tempi di spedizione per %s?', $product->name),
+            'name' => sprintf($this->l('What are the shipping times for %s?'), $product->name),
             'acceptedAnswer' => array(
                 '@type' => 'Answer',
-                'text' => sprintf('La spedizione di %s avviene generalmente entro 1-2 giorni lavorativi dalla conferma dell\'ordine. I tempi di consegna variano in base alla destinazione.', $product->name),
+                'text' => sprintf($this->l('Shipping of %s usually occurs within 1-2 business days from order confirmation. Delivery times vary based on destination.'), $product->name),
             ),
         );
 
@@ -2861,24 +2949,40 @@ class ProSEOMaster extends Module
     {
         $featureNameLower = strtolower($featureName);
 
-        // Map common feature names to natural questions
+        // Map common feature names to natural questions (translatable)
         $questionMap = array(
-            'composizione' => 'Qual è la composizione di %s?',
-            'materiale' => 'Di che materiale è fatto %s?',
-            'peso' => 'Quanto pesa %s?',
-            'dimensioni' => 'Quali sono le dimensioni di %s?',
-            'colore' => 'Di che colore è %s?',
-            'taglia' => 'Quali taglie sono disponibili per %s?',
-            'garanzia' => 'Che garanzia ha %s?',
-            'origine' => 'Qual è il paese di origine di %s?',
-            'marca' => 'Di che marca è %s?',
-            'capacità' => 'Qual è la capacità di %s?',
-            'potenza' => 'Qual è la potenza di %s?',
-            'voltaggio' => 'Qual è il voltaggio di %s?',
-            'altezza' => 'Qual è l\'altezza di %s?',
-            'larghezza' => 'Qual è la larghezza di %s?',
-            'profondità' => 'Qual è la profondità di %s?',
-            'lunghezza' => 'Qual è la lunghezza di %s?',
+            'composition' => $this->l('What is the composition of %s?'),
+            'composizione' => $this->l('What is the composition of %s?'),
+            'material' => $this->l('What material is %s made of?'),
+            'materiale' => $this->l('What material is %s made of?'),
+            'weight' => $this->l('How much does %s weigh?'),
+            'peso' => $this->l('How much does %s weigh?'),
+            'dimensions' => $this->l('What are the dimensions of %s?'),
+            'dimensioni' => $this->l('What are the dimensions of %s?'),
+            'color' => $this->l('What color is %s?'),
+            'colore' => $this->l('What color is %s?'),
+            'size' => $this->l('What sizes are available for %s?'),
+            'taglia' => $this->l('What sizes are available for %s?'),
+            'warranty' => $this->l('What warranty does %s have?'),
+            'garanzia' => $this->l('What warranty does %s have?'),
+            'origin' => $this->l('What is the country of origin of %s?'),
+            'origine' => $this->l('What is the country of origin of %s?'),
+            'brand' => $this->l('What brand is %s?'),
+            'marca' => $this->l('What brand is %s?'),
+            'capacity' => $this->l('What is the capacity of %s?'),
+            'capacità' => $this->l('What is the capacity of %s?'),
+            'power' => $this->l('What is the power of %s?'),
+            'potenza' => $this->l('What is the power of %s?'),
+            'voltage' => $this->l('What is the voltage of %s?'),
+            'voltaggio' => $this->l('What is the voltage of %s?'),
+            'height' => $this->l('What is the height of %s?'),
+            'altezza' => $this->l('What is the height of %s?'),
+            'width' => $this->l('What is the width of %s?'),
+            'larghezza' => $this->l('What is the width of %s?'),
+            'depth' => $this->l('What is the depth of %s?'),
+            'profondità' => $this->l('What is the depth of %s?'),
+            'length' => $this->l('What is the length of %s?'),
+            'lunghezza' => $this->l('What is the length of %s?'),
         );
 
         foreach ($questionMap as $key => $question) {
@@ -2887,8 +2991,8 @@ class ProSEOMaster extends Module
             }
         }
 
-        // Default question format
-        return sprintf('Qual è il/la %s di %s?', strtolower($featureName), $productName);
+        // Default question format (translatable)
+        return sprintf($this->l('What is the %s of %s?'), strtolower($featureName), $productName);
     }
 
     /**
@@ -2901,7 +3005,7 @@ class ProSEOMaster extends Module
     protected function featureToAnswer($featureName, $featureValue, $productName)
     {
         return sprintf(
-            'Il/La %s di %s è: %s.',
+            $this->l('The %s of %s is: %s.'),
             strtolower($featureName),
             $productName,
             $featureValue
@@ -2918,6 +3022,79 @@ class ProSEOMaster extends Module
         $host = Tools::getHttpHost(false, true);
         $requestUri = Tools::getValue('REQUEST_URI', isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '/');
         return $protocol . $host . $requestUri;
+    }
+
+    /**
+     * Get image dimensions for OG tags
+     * @param string $imageUrl
+     * @param array|null $product Product data array
+     * @return array
+     */
+    protected function getImageDimensions($imageUrl, $product = null)
+    {
+        // Try to get dimensions from product cover data first (most efficient)
+        if (!empty($product) && is_array($product) && !empty($product['cover']['large'])) {
+            $cover = $product['cover']['large'];
+            if (!empty($cover['width']) && !empty($cover['height'])) {
+                return array(
+                    'width' => (int) $cover['width'],
+                    'height' => (int) $cover['height'],
+                );
+            }
+        }
+
+        // Try to convert URL to local path for faster processing
+        $localPath = $this->urlToLocalPath($imageUrl);
+        if ($localPath && file_exists($localPath)) {
+            $info = @getimagesize($localPath);
+            if ($info !== false) {
+                return array(
+                    'width' => $info[0],
+                    'height' => $info[1],
+                );
+            }
+        }
+
+        // Use static cache to avoid repeated remote calls
+        static $dimensionCache = array();
+        if (isset($dimensionCache[$imageUrl])) {
+            return $dimensionCache[$imageUrl];
+        }
+
+        // As a last resort, try getimagesize on the URL (can be slow)
+        // Only attempt for local/same-domain URLs
+        $shopHost = Tools::getHttpHost(false, true);
+        $imageHost = parse_url($imageUrl, PHP_URL_HOST);
+
+        if ($imageHost === $shopHost || empty($imageHost)) {
+            $info = @getimagesize($imageUrl);
+            if ($info !== false) {
+                $dimensionCache[$imageUrl] = array(
+                    'width' => $info[0],
+                    'height' => $info[1],
+                );
+                return $dimensionCache[$imageUrl];
+            }
+        }
+
+        $dimensionCache[$imageUrl] = array();
+        return array();
+    }
+
+    /**
+     * Convert URL to local file path
+     * @param string $url
+     * @return string|false
+     */
+    protected function urlToLocalPath($url)
+    {
+        $shopUrl = $this->context->shop->getBaseURL(true);
+        if (strpos($url, $shopUrl) === 0) {
+            $relativePath = substr($url, strlen($shopUrl));
+            $localPath = _PS_ROOT_DIR_ . '/' . ltrim($relativePath, '/');
+            return $localPath;
+        }
+        return false;
     }
 
     /**
