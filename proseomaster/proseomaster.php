@@ -96,6 +96,17 @@ class ProSEOMaster extends Module
         'PROSEOMASTER_ENABLE_AI_META_TAGS',
         // Cron
         'PROSEOMASTER_CRON_TOKEN',
+        // Return Policy
+        'PROSEOMASTER_RETURN_DAYS',
+        'PROSEOMASTER_RETURN_METHOD',
+        'PROSEOMASTER_RETURN_FEES',
+        // Shipping
+        'PROSEOMASTER_SHIPPING_HANDLING_MIN',
+        'PROSEOMASTER_SHIPPING_HANDLING_MAX',
+        'PROSEOMASTER_SHIPPING_TRANSIT_MIN',
+        'PROSEOMASTER_SHIPPING_TRANSIT_MAX',
+        // Variants
+        'PROSEOMASTER_ENABLE_VARIANT_SCHEMA',
     );
 
     public function __construct()
@@ -163,6 +174,17 @@ class ProSEOMaster extends Module
             'PROSEOMASTER_ENABLE_AI_META_TAGS' => 1,
             // Cron token (generate unique token)
             'PROSEOMASTER_CRON_TOKEN' => $this->generateCronToken(),
+            // Return Policy defaults
+            'PROSEOMASTER_RETURN_DAYS' => 14,
+            'PROSEOMASTER_RETURN_METHOD' => 'ReturnByMail',
+            'PROSEOMASTER_RETURN_FEES' => 'FreeReturn',
+            // Shipping defaults
+            'PROSEOMASTER_SHIPPING_HANDLING_MIN' => 0,
+            'PROSEOMASTER_SHIPPING_HANDLING_MAX' => 2,
+            'PROSEOMASTER_SHIPPING_TRANSIT_MIN' => 1,
+            'PROSEOMASTER_SHIPPING_TRANSIT_MAX' => 5,
+            // Variants
+            'PROSEOMASTER_ENABLE_VARIANT_SCHEMA' => 1,
         );
 
         foreach ($defaultConfig as $key => $value) {
@@ -1748,17 +1770,132 @@ class ProSEOMaster extends Module
             }
         }
 
-        // Output all schemas
+        // Output all schemas with validation
         if (!empty($schemas)) {
             $output .= '<!-- ProSEO Master: JSON-LD Schema -->' . "\n";
             foreach ($schemas as $schema) {
-                $output .= '<script type="application/ld+json">' . "\n";
-                $output .= json_encode($schema, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-                $output .= "\n" . '</script>' . "\n";
+                // Validate schema before output
+                $validatedSchema = $this->validateJsonLdSchema($schema);
+                if ($validatedSchema !== null) {
+                    $jsonOutput = json_encode($validatedSchema, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+                    // Verify JSON encoding was successful
+                    if ($jsonOutput !== false && json_last_error() === JSON_ERROR_NONE) {
+                        $output .= '<script type="application/ld+json">' . "\n";
+                        $output .= $jsonOutput;
+                        $output .= "\n" . '</script>' . "\n";
+                    } else {
+                        // Log encoding error but don't break page
+                        PrestaShopLogger::addLog(
+                            'ProSEOMaster: JSON-LD encoding error - ' . json_last_error_msg(),
+                            2,
+                            null,
+                            'ProSEOMaster'
+                        );
+                    }
+                }
             }
         }
 
         return $output;
+    }
+
+    /**
+     * Validate and sanitize JSON-LD schema before output
+     * @param array $schema
+     * @return array|null
+     */
+    protected function validateJsonLdSchema($schema)
+    {
+        if (!is_array($schema) || empty($schema)) {
+            return null;
+        }
+
+        // Must have @context and @type
+        if (!isset($schema['@context']) || !isset($schema['@type'])) {
+            PrestaShopLogger::addLog(
+                'ProSEOMaster: Invalid schema - missing @context or @type',
+                2,
+                null,
+                'ProSEOMaster'
+            );
+            return null;
+        }
+
+        // Recursively clean and validate the schema
+        $cleanedSchema = $this->cleanSchemaData($schema);
+
+        // Validate specific schema types
+        $type = $schema['@type'];
+
+        // Product schema must have name and offers
+        if ($type === 'Product') {
+            if (empty($cleanedSchema['name'])) {
+                PrestaShopLogger::addLog(
+                    'ProSEOMaster: Product schema missing required name',
+                    2,
+                    null,
+                    'ProSEOMaster'
+                );
+                return null;
+            }
+            if (empty($cleanedSchema['offers'])) {
+                PrestaShopLogger::addLog(
+                    'ProSEOMaster: Product schema missing required offers',
+                    2,
+                    null,
+                    'ProSEOMaster'
+                );
+                return null;
+            }
+        }
+
+        // Organization schema must have name
+        if ($type === 'Organization' && empty($cleanedSchema['name'])) {
+            return null;
+        }
+
+        // LocalBusiness must have name and address
+        if ($type === 'LocalBusiness' || in_array($type, array('Store', 'Restaurant', 'Hotel'))) {
+            if (empty($cleanedSchema['name']) || empty($cleanedSchema['address'])) {
+                return null;
+            }
+        }
+
+        return $cleanedSchema;
+    }
+
+    /**
+     * Recursively clean schema data
+     * @param mixed $data
+     * @return mixed
+     */
+    protected function cleanSchemaData($data)
+    {
+        if (is_array($data)) {
+            $cleaned = array();
+            foreach ($data as $key => $value) {
+                $cleanedValue = $this->cleanSchemaData($value);
+                // Skip null/empty values except for numeric 0
+                if ($cleanedValue !== null && $cleanedValue !== '' && $cleanedValue !== array()) {
+                    $cleaned[$key] = $cleanedValue;
+                } elseif ($cleanedValue === 0 || $cleanedValue === '0' || $cleanedValue === 0.0) {
+                    $cleaned[$key] = $cleanedValue;
+                }
+            }
+            return $cleaned;
+        }
+
+        if (is_string($data)) {
+            // Remove control characters that could break JSON
+            $data = preg_replace('/[\x00-\x1F\x7F]/u', '', $data);
+            // Ensure valid UTF-8
+            if (!mb_check_encoding($data, 'UTF-8')) {
+                $data = mb_convert_encoding($data, 'UTF-8', 'auto');
+            }
+            return trim($data);
+        }
+
+        return $data;
     }
 
     /**
@@ -2136,7 +2273,12 @@ class ProSEOMaster extends Module
         $schema['itemCondition'] = $this->mapProductCondition($product->condition);
 
         // Offers - Required for Product rich results
-        $schema['offers'] = $this->generateOfferSchema($product, $productUrl);
+        // Check if product has combinations and variant schema is enabled
+        if (Configuration::get('PROSEOMASTER_ENABLE_VARIANT_SCHEMA') && $product->hasAttributes()) {
+            $schema['offers'] = $this->generateAggregateOfferSchema($product, $productUrl);
+        } else {
+            $schema['offers'] = $this->generateOfferSchema($product, $productUrl);
+        }
 
         // AggregateRating and Reviews
         if (Configuration::get('PROSEOMASTER_ENABLE_REVIEW_SCHEMA')) {
@@ -2202,7 +2344,85 @@ class ProSEOMaster extends Module
             $schema['offers']['shippingDetails'] = $this->generateShippingSchema();
         }
 
+        // Add promotion/discount schema if product has active discount
+        $promotion = $this->generatePromotionSchema($product);
+        if (!empty($promotion)) {
+            // For Offer type, add directly. For AggregateOffer, add to each offer
+            if (isset($schema['offers']['@type']) && $schema['offers']['@type'] === 'AggregateOffer') {
+                foreach ($schema['offers']['offers'] as &$offer) {
+                    $offer['priceSpecification'] = $promotion['priceSpecification'];
+                }
+            } else {
+                $schema['offers']['priceSpecification'] = $promotion['priceSpecification'];
+            }
+        }
+
         return $schema;
+    }
+
+    /**
+     * Generate Promotion/Discount schema for products on sale
+     * @param Product $product
+     * @return array|null
+     */
+    protected function generatePromotionSchema($product)
+    {
+        // Check if product has a specific price (discount)
+        $specificPrice = SpecificPrice::getSpecificPrice(
+            $product->id,
+            $this->context->shop->id,
+            $this->context->currency->id,
+            $this->context->country->id,
+            $this->context->customer->id_default_group ?? 0,
+            1 // quantity
+        );
+
+        if (!$specificPrice || empty($specificPrice['reduction'])) {
+            return null;
+        }
+
+        $currency = $this->context->currency->iso_code;
+        $originalPrice = $product->getPrice(true, null, 2, null, false, false); // Price without reduction
+        $currentPrice = $product->getPrice(true, null, 2); // Price with reduction
+
+        // Only add if there's actually a discount
+        if ($originalPrice <= $currentPrice) {
+            return null;
+        }
+
+        $discountAmount = $originalPrice - $currentPrice;
+        $discountPercent = round(($discountAmount / $originalPrice) * 100);
+
+        $priceSpec = array(
+            '@type' => 'PriceSpecification',
+            'price' => number_format($currentPrice, 2, '.', ''),
+            'priceCurrency' => $currency,
+        );
+
+        // Add discount information
+        if ($specificPrice['reduction_type'] === 'percentage') {
+            $priceSpec['valueAddedTaxIncluded'] = true;
+            // Add the original price reference
+            $priceSpec['referencePrice'] = array(
+                '@type' => 'PriceSpecification',
+                'price' => number_format($originalPrice, 2, '.', ''),
+                'priceCurrency' => $currency,
+            );
+        }
+
+        // Add validity period
+        if (!empty($specificPrice['from']) && $specificPrice['from'] !== '0000-00-00 00:00:00') {
+            $priceSpec['validFrom'] = date('Y-m-d', strtotime($specificPrice['from']));
+        }
+        if (!empty($specificPrice['to']) && $specificPrice['to'] !== '0000-00-00 00:00:00') {
+            $priceSpec['validThrough'] = date('Y-m-d', strtotime($specificPrice['to']));
+        }
+
+        return array(
+            'priceSpecification' => $priceSpec,
+            'discountAmount' => $discountAmount,
+            'discountPercent' => $discountPercent,
+        );
     }
 
     /**
@@ -2271,15 +2491,30 @@ class ProSEOMaster extends Module
     {
         $shopUrl = $this->context->link->getPageLink('index', true);
 
-        return array(
+        $returnDays = (int) Configuration::get('PROSEOMASTER_RETURN_DAYS') ?: 14;
+        $returnMethod = Configuration::get('PROSEOMASTER_RETURN_METHOD') ?: 'ReturnByMail';
+        $returnFees = Configuration::get('PROSEOMASTER_RETURN_FEES') ?: 'FreeReturn';
+
+        // If return days is 0, it means no returns accepted
+        $policyCategory = $returnDays > 0
+            ? 'https://schema.org/MerchantReturnFiniteReturnWindow'
+            : 'https://schema.org/MerchantReturnNotPermitted';
+
+        $policy = array(
             '@type' => 'MerchantReturnPolicy',
             '@id' => $shopUrl . '#returnpolicy',
             'applicableCountry' => $this->context->country->iso_code,
-            'returnPolicyCategory' => 'https://schema.org/MerchantReturnFiniteReturnWindow',
-            'merchantReturnDays' => 14,
-            'returnMethod' => 'https://schema.org/ReturnByMail',
-            'returnFees' => 'https://schema.org/FreeReturn',
+            'returnPolicyCategory' => $policyCategory,
+            'returnMethod' => 'https://schema.org/' . $returnMethod,
+            'returnFees' => 'https://schema.org/' . $returnFees,
         );
+
+        // Only add merchantReturnDays if returns are allowed
+        if ($returnDays > 0) {
+            $policy['merchantReturnDays'] = $returnDays;
+        }
+
+        return $policy;
     }
 
     /**
@@ -2291,6 +2526,21 @@ class ProSEOMaster extends Module
         $shopUrl = $this->context->link->getPageLink('index', true);
         $currency = $this->context->currency->iso_code;
 
+        // Get configurable shipping times
+        $handlingMin = (int) Configuration::get('PROSEOMASTER_SHIPPING_HANDLING_MIN') ?: 0;
+        $handlingMax = (int) Configuration::get('PROSEOMASTER_SHIPPING_HANDLING_MAX') ?: 2;
+        $transitMin = (int) Configuration::get('PROSEOMASTER_SHIPPING_TRANSIT_MIN') ?: 1;
+        $transitMax = (int) Configuration::get('PROSEOMASTER_SHIPPING_TRANSIT_MAX') ?: 5;
+
+        // Try to get actual shipping cost from cart/carrier if available
+        $shippingCost = '0';
+        if (isset($this->context->cart) && Validate::isLoadedObject($this->context->cart)) {
+            $cartShipping = $this->context->cart->getTotalShippingCost();
+            if ($cartShipping > 0) {
+                $shippingCost = number_format($cartShipping, 2, '.', '');
+            }
+        }
+
         return array(
             '@type' => 'OfferShippingDetails',
             '@id' => $shopUrl . '#shipping',
@@ -2300,21 +2550,21 @@ class ProSEOMaster extends Module
             ),
             'shippingRate' => array(
                 '@type' => 'MonetaryAmount',
-                'value' => '0',
+                'value' => $shippingCost,
                 'currency' => $currency,
             ),
             'deliveryTime' => array(
                 '@type' => 'ShippingDeliveryTime',
                 'handlingTime' => array(
                     '@type' => 'QuantitativeValue',
-                    'minValue' => 0,
-                    'maxValue' => 2,
+                    'minValue' => $handlingMin,
+                    'maxValue' => $handlingMax,
                     'unitCode' => 'DAY',
                 ),
                 'transitTime' => array(
                     '@type' => 'QuantitativeValue',
-                    'minValue' => 1,
-                    'maxValue' => 5,
+                    'minValue' => $transitMin,
+                    'maxValue' => $transitMax,
                     'unitCode' => 'DAY',
                 ),
             ),
@@ -2493,6 +2743,117 @@ class ProSEOMaster extends Module
         }
 
         return $offer;
+    }
+
+    /**
+     * Generate AggregateOffer schema for products with combinations (variants)
+     * @param Product $product
+     * @param string $productUrl
+     * @return array
+     */
+    protected function generateAggregateOfferSchema($product, $productUrl)
+    {
+        $currency = $this->context->currency->iso_code;
+        $combinations = $product->getAttributeCombinations($this->context->language->id);
+
+        if (empty($combinations)) {
+            // Fallback to single offer if no combinations found
+            return $this->generateOfferSchema($product, $productUrl);
+        }
+
+        $prices = array();
+        $offers = array();
+        $hasInStock = false;
+
+        // Group combinations by id_product_attribute
+        $groupedCombinations = array();
+        foreach ($combinations as $combination) {
+            $idAttr = $combination['id_product_attribute'];
+            if (!isset($groupedCombinations[$idAttr])) {
+                $groupedCombinations[$idAttr] = array(
+                    'id_product_attribute' => $idAttr,
+                    'reference' => $combination['reference'],
+                    'quantity' => $combination['quantity'],
+                    'price' => $combination['price'],
+                    'attributes' => array(),
+                );
+            }
+            $groupedCombinations[$idAttr]['attributes'][] = array(
+                'group' => $combination['group_name'],
+                'name' => $combination['attribute_name'],
+            );
+        }
+
+        $shopName = Configuration::get('PROSEOMASTER_ORGANIZATION_NAME') ?: Configuration::get('PS_SHOP_NAME');
+
+        foreach ($groupedCombinations as $combination) {
+            // Calculate variant price (base price + attribute price impact)
+            $variantPrice = $product->getPrice(true, $combination['id_product_attribute'], 2);
+            $prices[] = $variantPrice;
+
+            // Build variant name from attributes
+            $variantNames = array();
+            foreach ($combination['attributes'] as $attr) {
+                $variantNames[] = $attr['name'];
+            }
+            $variantName = implode(' / ', $variantNames);
+
+            // Determine availability
+            $quantity = (int) $combination['quantity'];
+            if ($quantity > 0) {
+                $availability = 'https://schema.org/InStock';
+                $hasInStock = true;
+            } elseif ($product->out_of_stock == 1) {
+                $availability = 'https://schema.org/BackOrder';
+            } else {
+                $availability = 'https://schema.org/OutOfStock';
+            }
+
+            $offer = array(
+                '@type' => 'Offer',
+                'name' => $variantName,
+                'url' => $productUrl . '#/' . $combination['id_product_attribute'],
+                'priceCurrency' => $currency,
+                'price' => number_format($variantPrice, 2, '.', ''),
+                'availability' => $availability,
+                'itemCondition' => $this->mapProductCondition($product->condition),
+                'seller' => array(
+                    '@type' => 'Organization',
+                    'name' => $shopName,
+                ),
+            );
+
+            // Add SKU if available
+            if (!empty($combination['reference'])) {
+                $offer['sku'] = $combination['reference'];
+            }
+
+            $offers[] = $offer;
+        }
+
+        // Calculate price range
+        $lowPrice = min($prices);
+        $highPrice = max($prices);
+
+        $aggregateOffer = array(
+            '@type' => 'AggregateOffer',
+            'priceCurrency' => $currency,
+            'lowPrice' => number_format($lowPrice, 2, '.', ''),
+            'highPrice' => number_format($highPrice, 2, '.', ''),
+            'offerCount' => count($offers),
+            'availability' => $hasInStock ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
+            'offers' => $offers,
+        );
+
+        // Add shipping and return policy
+        $aggregateOffer['shippingDetails'] = $this->generateShippingSchema();
+
+        $returnPolicy = $this->generateReturnPolicySchema();
+        if (!empty($returnPolicy)) {
+            $aggregateOffer['hasMerchantReturnPolicy'] = $returnPolicy;
+        }
+
+        return $aggregateOffer;
     }
 
     /**
@@ -3421,6 +3782,98 @@ class ProSEOMaster extends Module
                                 array('id' => 'active_on', 'value' => 1, 'label' => $this->l('Yes')),
                                 array('id' => 'active_off', 'value' => 0, 'label' => $this->l('No')),
                             ),
+                        ),
+                        array(
+                            'type' => 'switch',
+                            'label' => $this->l('Enable Product Variants Schema'),
+                            'name' => 'PROSEOMASTER_ENABLE_VARIANT_SCHEMA',
+                            'desc' => $this->l('Generate AggregateOffer schema for products with combinations (color, size, etc.)'),
+                            'is_bool' => true,
+                            'values' => array(
+                                array('id' => 'active_on', 'value' => 1, 'label' => $this->l('Yes')),
+                                array('id' => 'active_off', 'value' => 0, 'label' => $this->l('No')),
+                            ),
+                        ),
+                    ),
+                    'submit' => array(
+                        'title' => $this->l('Save'),
+                    ),
+                ),
+            ),
+            // Return Policy & Shipping
+            array(
+                'form' => array(
+                    'legend' => array(
+                        'title' => $this->l('Return Policy & Shipping Schema'),
+                        'icon' => 'icon-truck',
+                    ),
+                    'description' => $this->l('Configure return policy and shipping details for Google Merchant Center compliance.'),
+                    'input' => array(
+                        array(
+                            'type' => 'text',
+                            'label' => $this->l('Return Period (days)'),
+                            'name' => 'PROSEOMASTER_RETURN_DAYS',
+                            'desc' => $this->l('Number of days customers can return products (e.g., 14, 30)'),
+                            'class' => 'fixed-width-sm',
+                        ),
+                        array(
+                            'type' => 'select',
+                            'label' => $this->l('Return Method'),
+                            'name' => 'PROSEOMASTER_RETURN_METHOD',
+                            'options' => array(
+                                'query' => array(
+                                    array('id' => 'ReturnByMail', 'name' => $this->l('Return by Mail')),
+                                    array('id' => 'ReturnInStore', 'name' => $this->l('Return in Store')),
+                                    array('id' => 'ReturnAtKiosk', 'name' => $this->l('Return at Kiosk')),
+                                ),
+                                'id' => 'id',
+                                'name' => 'name',
+                            ),
+                        ),
+                        array(
+                            'type' => 'select',
+                            'label' => $this->l('Return Fees'),
+                            'name' => 'PROSEOMASTER_RETURN_FEES',
+                            'options' => array(
+                                'query' => array(
+                                    array('id' => 'FreeReturn', 'name' => $this->l('Free Return')),
+                                    array('id' => 'ReturnShippingFees', 'name' => $this->l('Customer pays shipping')),
+                                    array('id' => 'RestockingFee', 'name' => $this->l('Restocking Fee applies')),
+                                ),
+                                'id' => 'id',
+                                'name' => 'name',
+                            ),
+                        ),
+                        array(
+                            'type' => 'html',
+                            'name' => 'shipping_separator',
+                            'html_content' => '<hr><h4>' . $this->l('Shipping Times') . '</h4>',
+                        ),
+                        array(
+                            'type' => 'text',
+                            'label' => $this->l('Handling Time (min days)'),
+                            'name' => 'PROSEOMASTER_SHIPPING_HANDLING_MIN',
+                            'desc' => $this->l('Minimum days to prepare order for shipping'),
+                            'class' => 'fixed-width-sm',
+                        ),
+                        array(
+                            'type' => 'text',
+                            'label' => $this->l('Handling Time (max days)'),
+                            'name' => 'PROSEOMASTER_SHIPPING_HANDLING_MAX',
+                            'class' => 'fixed-width-sm',
+                        ),
+                        array(
+                            'type' => 'text',
+                            'label' => $this->l('Transit Time (min days)'),
+                            'name' => 'PROSEOMASTER_SHIPPING_TRANSIT_MIN',
+                            'desc' => $this->l('Minimum shipping transit days'),
+                            'class' => 'fixed-width-sm',
+                        ),
+                        array(
+                            'type' => 'text',
+                            'label' => $this->l('Transit Time (max days)'),
+                            'name' => 'PROSEOMASTER_SHIPPING_TRANSIT_MAX',
+                            'class' => 'fixed-width-sm',
                         ),
                     ),
                     'submit' => array(
