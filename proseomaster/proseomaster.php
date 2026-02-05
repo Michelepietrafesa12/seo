@@ -2725,12 +2725,18 @@ class ProSEOMaster extends Module
             'name' => $shopName,
         );
 
-        // Price valid until (for discounts)
-        if ($product->specificPrice && !empty($product->specificPrice['to'])) {
-            $priceValidUntil = $product->specificPrice['to'];
-            if ($priceValidUntil !== '0000-00-00 00:00:00') {
-                $offer['priceValidUntil'] = date('Y-m-d', strtotime($priceValidUntil));
-            }
+        // Price valid until (for discounts) - use proper SpecificPrice API
+        $specificPrice = SpecificPrice::getSpecificPrice(
+            $product->id,
+            $this->context->shop->id,
+            $this->context->currency->id,
+            $this->context->country->id,
+            $this->context->customer->id_default_group ?? 0,
+            1
+        );
+
+        if ($specificPrice && !empty($specificPrice['to']) && $specificPrice['to'] !== '0000-00-00 00:00:00') {
+            $offer['priceValidUntil'] = date('Y-m-d', strtotime($specificPrice['to']));
         } else {
             // Default: price valid for 1 year
             $offer['priceValidUntil'] = date('Y-m-d', strtotime('+1 year'));

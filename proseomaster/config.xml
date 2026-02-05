@@ -2,7 +2,7 @@
 <module>
     <name>proseomaster</name>
     <displayName><![CDATA[ProSEO Master - Advanced SEO & Schema]]></displayName>
-    <version><![CDATA[1.0.0]]></version>
+    <version><![CDATA[2.5.0]]></version>
     <description><![CDATA[Professional SEO module with structured data (Schema.org), Open Graph, Twitter Cards, and advanced meta tags management for improved organic rankings.]]></description>
     <author><![CDATA[Michele Pietrafesa]]></author>
     <tab><![CDATA[seo]]></tab>
