@@ -212,14 +212,32 @@ class ProSEOMasterPerformance
     {
         // Check ps_imageslider module
         if (Module::isEnabled('ps_imageslider')) {
-            $sql = 'SELECT image FROM ' . _DB_PREFIX_ . 'homeslider_slides hs
-                    INNER JOIN ' . _DB_PREFIX_ . 'homeslider_slides_lang hsl ON hs.id_homeslider_slides = hsl.id_homeslider_slides
-                    WHERE hs.active = 1 AND hsl.id_lang = ' . (int) $this->context->language->id . '
-                    ORDER BY hs.position ASC LIMIT 1';
+            try {
+                // First verify the table exists
+                $tableExists = Db::getInstance()->executeS(
+                    "SELECT TABLE_NAME FROM information_schema.TABLES
+                     WHERE TABLE_SCHEMA = DATABASE()
+                     AND TABLE_NAME = '" . _DB_PREFIX_ . "homeslider_slides'"
+                );
 
-            $image = Db::getInstance()->getValue($sql);
-            if ($image) {
-                return _MODULE_DIR_ . 'ps_imageslider/images/' . $image;
+                if (!empty($tableExists)) {
+                    $sql = 'SELECT hsl.image
+                            FROM `' . _DB_PREFIX_ . 'homeslider_slides` hs
+                            INNER JOIN `' . _DB_PREFIX_ . 'homeslider_slides_lang` hsl
+                                ON hs.id_homeslider_slides = hsl.id_homeslider_slides
+                            WHERE hs.active = 1
+                            AND hsl.id_lang = ' . (int) $this->context->language->id . '
+                            ORDER BY hs.position ASC
+                            LIMIT 1';
+
+                    $image = Db::getInstance()->getValue($sql);
+                    if ($image) {
+                        return _MODULE_DIR_ . 'ps_imageslider/images/' . $image;
+                    }
+                }
+            } catch (Exception $e) {
+                // Silently fail - slider detection is optional
+                return null;
             }
         }
 
