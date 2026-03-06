@@ -98,18 +98,19 @@ class ProSEOMasterMeta
         $template = Configuration::get('PROSEOMASTER_PRODUCT_DESC_TEMPLATE');
 
         if (empty($template)) {
-            // Default template with call-to-action keywords
-            $template = '{description_short} Acquista {product_name} online. {availability}. Spedizione veloce.';
+            // Default template with call-to-action keywords (configurable via admin)
+            $defaultTemplate = Configuration::get('PROSEOMASTER_META_DESCRIPTION_TEMPLATE');
+            $template = !empty($defaultTemplate) ? $defaultTemplate : '{description_short} Buy {product_name} online. {availability}. Fast shipping.';
         }
 
-        // Get availability text
+        // Get availability text (configurable via admin for translations)
         $quantity = Product::getQuantity($product->id);
         if ($quantity > 0) {
-            $availability = 'Disponibile';
+            $availability = Configuration::get('PROSEOMASTER_TEXT_IN_STOCK') ?: 'In Stock';
         } elseif ($product->out_of_stock == 1) {
-            $availability = 'Ordinabile';
+            $availability = Configuration::get('PROSEOMASTER_TEXT_BACKORDER') ?: 'Available on backorder';
         } else {
-            $availability = 'Non disponibile';
+            $availability = Configuration::get('PROSEOMASTER_TEXT_OUT_OF_STOCK') ?: 'Out of Stock';
         }
 
         $descriptionShort = strip_tags($product->description_short);

@@ -764,25 +764,52 @@ class ProSEOMasterSitemap
      */
     protected function pingUrl($url)
     {
-        $ch = curl_init($url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 10);
-        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+        try {
+            if (!function_exists('curl_init')) {
+                return false;
+            }
 
-        // SSL verification - enable in production with CA bundle
-        if (Configuration::get('PS_SSL_ENABLED') && file_exists(_PS_TOOL_DIR_ . 'cacert.pem')) {
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
-            curl_setopt($ch, CURLOPT_CAINFO, _PS_TOOL_DIR_ . 'cacert.pem');
-        } else {
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
+            $ch = curl_init($url);
+            if ($ch === false) {
+                return false;
+            }
+
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+
+            // SSL verification - enable in production with CA bundle
+            if (Configuration::get('PS_SSL_ENABLED') && file_exists(_PS_TOOL_DIR_ . 'cacert.pem')) {
+                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+                curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+                curl_setopt($ch, CURLOPT_CAINFO, _PS_TOOL_DIR_ . 'cacert.pem');
+            } else {
+                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+                curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
+            }
+
+            $result = curl_exec($ch);
+            $curlError = curl_errno($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+
+            // Return false if curl failed or returned error
+            if ($result === false || $curlError !== 0) {
+                return false;
+            }
+
+            return $httpCode >= 200 && $httpCode < 300;
+        } catch (Exception $e) {
+            // Log error and return false on any exception
+            if (class_exists('PrestaShopLogger')) {
+                PrestaShopLogger::addLog(
+                    'ProSEOMaster sitemap ping error: ' . $e->getMessage(),
+                    2,
+                    $e->getCode(),
+                    'ProSEOMaster'
+                );
+            }
+            return false;
         }
-
-        curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-
-        return $httpCode >= 200 && $httpCode < 300;
     }
 }

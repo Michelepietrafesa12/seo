@@ -108,6 +108,12 @@ class ProSEOMaster extends Module
         'PROSEOMASTER_SHIPPING_TRANSIT_MAX',
         // Variants
         'PROSEOMASTER_ENABLE_VARIANT_SCHEMA',
+        // Availability text (translatable)
+        'PROSEOMASTER_TEXT_IN_STOCK',
+        'PROSEOMASTER_TEXT_OUT_OF_STOCK',
+        'PROSEOMASTER_TEXT_BACKORDER',
+        // Meta description template
+        'PROSEOMASTER_META_DESCRIPTION_TEMPLATE',
     );
 
     /** @var array Runtime cache to avoid duplicate SQL queries within same request */
@@ -189,6 +195,12 @@ class ProSEOMaster extends Module
             'PROSEOMASTER_SHIPPING_TRANSIT_MAX' => 5,
             // Variants
             'PROSEOMASTER_ENABLE_VARIANT_SCHEMA' => 1,
+            // Availability text (translatable)
+            'PROSEOMASTER_TEXT_IN_STOCK' => 'In Stock',
+            'PROSEOMASTER_TEXT_OUT_OF_STOCK' => 'Out of Stock',
+            'PROSEOMASTER_TEXT_BACKORDER' => 'Available on backorder',
+            // Meta description template
+            'PROSEOMASTER_META_DESCRIPTION_TEMPLATE' => '{description_short} Buy {product_name} online. {availability}. Fast shipping.',
         );
 
         foreach ($defaultConfig as $key => $value) {
@@ -678,6 +690,15 @@ class ProSEOMaster extends Module
             $rules = $performance->generateHtaccessRules();
 
             $htaccessPath = _PS_ROOT_DIR_ . '/.htaccess';
+
+            // Check write permissions before attempting to modify
+            if (!is_writable(_PS_ROOT_DIR_) && !file_exists($htaccessPath)) {
+                return $this->displayError($this->l('Error: Root directory is not writable. Cannot create .htaccess file.'));
+            }
+
+            if (file_exists($htaccessPath) && !is_writable($htaccessPath)) {
+                return $this->displayError($this->l('Error: .htaccess file is not writable. Please check file permissions (chmod 644 or 664).'));
+            }
 
             // Check if ProSEO rules already exist
             if (file_exists($htaccessPath)) {
@@ -4358,7 +4379,8 @@ class ProSEOMaster extends Module
                 // PrestaShop HelperForm automatically includes admin token,
                 // but verify it's present for security
                 // Allow if the standard PrestaShop admin token matches
-                if (!Tools::getValue('token') || Tools::getValue('token') !== Tools::getAdminToken('AdminModules' . (int) Tab::getIdFromClassName('AdminModules') . (int) $this->context->employee->id)) {
+                $employeeId = isset($this->context->employee) && $this->context->employee ? (int) $this->context->employee->id : 0;
+                if ($employeeId === 0 || !Tools::getValue('token') || Tools::getValue('token') !== Tools::getAdminToken('AdminModules' . (int) Tab::getIdFromClassName('AdminModules') . $employeeId)) {
                     $output .= $this->displayError($this->l('Invalid security token. Please reload the page and try again.'));
                     return $output . $this->renderDashboard() . $this->renderRedirectManager() . $this->renderLinkChecker() . $this->renderSchemaTester() . $this->renderBulkEditor() . $this->renderForm() . $this->renderAdvancedForm();
                 }
