@@ -1509,7 +1509,7 @@ class ProSEOMaster extends Module
         }
 
         // Check for ps_facetedsearch module parameters (layered navigation)
-        $requestUri = isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '';
+        $requestUri = $this->getRequestUri();
         if (preg_match('/\/filter-/', $requestUri) || preg_match('/[?&](selected_filters|layered_)/', $requestUri)) {
             return true;
         }
@@ -3001,11 +3001,75 @@ class ProSEOMaster extends Module
     protected function generateReviewSchema($product)
     {
         $result = array();
+        $reviews = array();
+
+        // Use cached review data to avoid repeated SQL queries per product
+        $cacheKey = 'review_data_' . (int) $product->id;
+        if (!isset($this->runtimeCache[$cacheKey])) {
+            $this->runtimeCache[$cacheKey] = $this->fetchReviewData($product);
+        }
+
+        $reviewData = $this->runtimeCache[$cacheKey];
+        $avgRating = $reviewData['avg_rating'];
+        $reviewCount = $reviewData['review_count'];
+        $reviews = $reviewData['reviews'];
+
+        $minReviews = (int) Configuration::get('PROSEOMASTER_MIN_REVIEWS_AGGREGATE');
+
+        // Only add aggregate rating if minimum reviews threshold is met
+        if ($reviewCount >= $minReviews && !empty($avgRating) && $avgRating > 0) {
+            $result['aggregateRating'] = array(
+                '@type' => 'AggregateRating',
+                'ratingValue' => number_format((float) $avgRating, 1, '.', ''),
+                'bestRating' => '5',
+                'worstRating' => '1',
+                'reviewCount' => (int) $reviewCount,
+                'ratingCount' => (int) $reviewCount,
+            );
+        }
+
+        // Get individual reviews (limit to 10 for performance)
+        if (!empty($reviews)) {
+            $result['review'] = array();
+            foreach ($reviews as $review) {
+                $reviewSchema = array(
+                    '@type' => 'Review',
+                    'reviewRating' => array(
+                        '@type' => 'Rating',
+                        'ratingValue' => (int) ($review['grade'] ?? $review['rating'] ?? 5),
+                        'bestRating' => '5',
+                        'worstRating' => '1',
+                    ),
+                    'author' => array(
+                        '@type' => 'Person',
+                        'name' => $review['customer_name'] ?? $review['author'] ?? 'Customer',
+                    ),
+                    'datePublished' => date('Y-m-d', strtotime($review['date_add'] ?? $review['date'] ?? 'now')),
+                );
+
+                // Add review body if available
+                $reviewBody = $review['content'] ?? $review['body'] ?? $review['text'] ?? '';
+                if (!empty($reviewBody)) {
+                    $reviewSchema['reviewBody'] = $this->cleanText($reviewBody);
+                }
+
+                $result['review'][] = $reviewSchema;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Fetch review data from all supported review modules (cached per product)
+     * @param Product $product
+     * @return array with keys: avg_rating, review_count, reviews
+     */
+    protected function fetchReviewData($product)
+    {
         $avgRating = null;
         $reviewCount = 0;
         $reviews = array();
-
-        // Try different review modules in priority order
 
         // 1. PrestaShop native productcomments
         if (Module::isEnabled('productcomments') && class_exists('ProductComment')) {
@@ -3059,50 +3123,11 @@ class ProSEOMaster extends Module
             }
         }
 
-        $minReviews = (int) Configuration::get('PROSEOMASTER_MIN_REVIEWS_AGGREGATE');
-
-        // Only add aggregate rating if minimum reviews threshold is met
-        if ($reviewCount >= $minReviews && !empty($avgRating) && $avgRating > 0) {
-            $result['aggregateRating'] = array(
-                '@type' => 'AggregateRating',
-                'ratingValue' => number_format((float) $avgRating, 1, '.', ''),
-                'bestRating' => '5',
-                'worstRating' => '1',
-                'reviewCount' => (int) $reviewCount,
-                'ratingCount' => (int) $reviewCount,
-            );
-        }
-
-        // Get individual reviews (limit to 10 for performance)
-        if (!empty($reviews)) {
-            $result['review'] = array();
-            foreach ($reviews as $review) {
-                $reviewSchema = array(
-                    '@type' => 'Review',
-                    'reviewRating' => array(
-                        '@type' => 'Rating',
-                        'ratingValue' => (int) ($review['grade'] ?? $review['rating'] ?? 5),
-                        'bestRating' => '5',
-                        'worstRating' => '1',
-                    ),
-                    'author' => array(
-                        '@type' => 'Person',
-                        'name' => $review['customer_name'] ?? $review['author'] ?? 'Customer',
-                    ),
-                    'datePublished' => date('Y-m-d', strtotime($review['date_add'] ?? $review['date'] ?? 'now')),
-                );
-
-                // Add review body if available
-                $reviewBody = $review['content'] ?? $review['body'] ?? $review['text'] ?? '';
-                if (!empty($reviewBody)) {
-                    $reviewSchema['reviewBody'] = $this->cleanText($reviewBody);
-                }
-
-                $result['review'][] = $reviewSchema;
-            }
-        }
-
-        return $result;
+        return array(
+            'avg_rating' => $avgRating,
+            'review_count' => $reviewCount,
+            'reviews' => $reviews,
+        );
     }
 
     /**
@@ -3462,6 +3487,22 @@ class ProSEOMaster extends Module
     }
 
     /**
+     * Get request URI safely (cached)
+     * @return string
+     */
+    protected function getRequestUri()
+    {
+        if (!isset($this->runtimeCache['request_uri'])) {
+            // Use PrestaShop's Tools for safe server variable access
+            $uri = isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '/';
+            // Sanitize: strip null bytes and limit length
+            $uri = str_replace("\0", '', $uri);
+            $this->runtimeCache['request_uri'] = substr($uri, 0, 2048);
+        }
+        return $this->runtimeCache['request_uri'];
+    }
+
+    /**
      * Get current page URL
      * @return string
      */
@@ -3469,7 +3510,7 @@ class ProSEOMaster extends Module
     {
         $protocol = Tools::usingSecureMode() ? 'https://' : 'http://';
         $host = Tools::getHttpHost(false, true);
-        $requestUri = Tools::getValue('REQUEST_URI', isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '/');
+        $requestUri = $this->getRequestUri();
         return $protocol . $host . $requestUri;
     }
 
@@ -3718,7 +3759,7 @@ class ProSEOMaster extends Module
         }
 
         // Check URL for payment module routes
-        $requestUri = Tools::getValue('REQUEST_URI', isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '');
+        $requestUri = $this->getRequestUri();
         if (preg_match('/(checkout|payment|pay|order|cart|module.*pay)/i', $requestUri)) {
             return true;
         }
@@ -4260,7 +4301,7 @@ class ProSEOMaster extends Module
         if (http_response_code() !== 404) {
             // Check if URL exists in redirects anyway
             $redirects = new ProSEOMasterRedirects();
-            $requestUri = isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '';
+            $requestUri = $this->getRequestUri();
             $redirect = $redirects->getRedirect($requestUri);
 
             if ($redirect) {
@@ -4272,7 +4313,10 @@ class ProSEOMaster extends Module
                     $newUrl = rtrim($baseUrl, '/') . $newUrl;
                 }
 
-                header('HTTP/1.1 ' . $redirect['redirect_type'] . ' Moved Permanently');
+                $validTypes = array(301, 302, 303, 307, 308);
+                $type = in_array((int) $redirect['redirect_type'], $validTypes, true) ? (int) $redirect['redirect_type'] : 301;
+                $statusTexts = array(301 => 'Moved Permanently', 302 => 'Found', 303 => 'See Other', 307 => 'Temporary Redirect', 308 => 'Permanent Redirect');
+                header('HTTP/1.1 ' . $type . ' ' . $statusTexts[$type]);
                 header('Location: ' . $newUrl);
                 header('Connection: close');
                 exit;
@@ -4288,6 +4332,38 @@ class ProSEOMaster extends Module
     public function getContent()
     {
         $output = '';
+
+        // CSRF token validation for all POST actions
+        $isPostAction = false;
+        $postActions = array(
+            'submitProSEOMasterConfig', 'generateSitemap', 'generateRobots',
+            'runSeoAudit', 'generateHtaccess', 'regenerateCronToken',
+            'addRedirect', 'deleteRedirect', 'toggleRedirect',
+            'importRedirects', 'exportRedirects', 'cleanRedirects',
+            'runLinkChecker', 'exportBrokenLinks', 'testProductSchema',
+            'auditAllSchemas', 'analyzeLinking', 'exportSeoData', 'importSeoData',
+        );
+
+        foreach ($postActions as $action) {
+            if (Tools::isSubmit($action)) {
+                $isPostAction = true;
+                break;
+            }
+        }
+
+        if ($isPostAction) {
+            $adminToken = Tools::getAdminTokenLite('AdminModules');
+            $submittedToken = Tools::getValue('_token', Tools::getValue('token'));
+            if (!$submittedToken || $submittedToken !== $adminToken) {
+                // PrestaShop HelperForm automatically includes admin token,
+                // but verify it's present for security
+                // Allow if the standard PrestaShop admin token matches
+                if (!Tools::getValue('token') || Tools::getValue('token') !== Tools::getAdminToken('AdminModules' . (int) Tab::getIdFromClassName('AdminModules') . (int) $this->context->employee->id)) {
+                    $output .= $this->displayError($this->l('Invalid security token. Please reload the page and try again.'));
+                    return $output . $this->renderDashboard() . $this->renderRedirectManager() . $this->renderLinkChecker() . $this->renderSchemaTester() . $this->renderBulkEditor() . $this->renderForm() . $this->renderAdvancedForm();
+                }
+            }
+        }
 
         // Handle form submissions
         if (Tools::isSubmit('submitProSEOMasterConfig')) {
@@ -4393,6 +4469,31 @@ class ProSEOMaster extends Module
 
         if (empty($oldUrl) || empty($newUrl)) {
             return $this->displayError($this->l('Both old URL and new URL are required.'));
+        }
+
+        // Validate redirect type (only standard HTTP redirect codes)
+        $validRedirectTypes = array(301, 302, 303, 307, 308);
+        if (!in_array($redirectType, $validRedirectTypes, true)) {
+            return $this->displayError($this->l('Invalid redirect type. Allowed: 301, 302, 303, 307, 308.'));
+        }
+
+        // Validate URL lengths
+        if (strlen($oldUrl) > 2048 || strlen($newUrl) > 2048) {
+            return $this->displayError($this->l('URL is too long (max 2048 characters).'));
+        }
+
+        // Validate URL format: must start with / or http(s)://
+        if (!preg_match('#^(/|https?://)#', $oldUrl) || !preg_match('#^(/|https?://)#', $newUrl)) {
+            return $this->displayError($this->l('URLs must start with / or http(s)://'));
+        }
+
+        // Prevent open redirect: new_url must be relative or same domain
+        if (preg_match('#^https?://#', $newUrl)) {
+            $shopDomain = Tools::getHttpHost(false, true);
+            $redirectHost = parse_url($newUrl, PHP_URL_HOST);
+            if ($redirectHost !== $shopDomain && $redirectHost !== 'www.' . $shopDomain) {
+                return $this->displayError($this->l('External redirect URLs are not allowed for security reasons.'));
+            }
         }
 
         $redirects = new ProSEOMasterRedirects();

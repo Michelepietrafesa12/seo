@@ -541,36 +541,53 @@ class ProSEOMasterLinkChecker
         // Broken links
         foreach ($this->results['broken_links'] as $link) {
             $csv .= '"Broken Link",';
-            $csv .= '"' . $link['url'] . '",';
-            $csv .= '"' . $link['source_type'] . '",';
-            $csv .= $link['source_id'] . ',';
-            $csv .= '"' . str_replace('"', '""', $link['source_name']) . '",';
-            $csv .= $link['http_code'] . ',';
-            $csv .= '"' . $link['error'] . '"' . "\n";
+            $csv .= '"' . $this->escapeCsvField($link['url']) . '",';
+            $csv .= '"' . $this->escapeCsvField($link['source_type']) . '",';
+            $csv .= (int) $link['source_id'] . ',';
+            $csv .= '"' . $this->escapeCsvField($link['source_name']) . '",';
+            $csv .= (int) $link['http_code'] . ',';
+            $csv .= '"' . $this->escapeCsvField($link['error']) . '"' . "\n";
         }
 
         // Broken images
         foreach ($this->results['broken_images'] as $image) {
             $csv .= '"Broken Image",';
-            $csv .= '"' . $image['url'] . '",';
-            $csv .= '"' . $image['source_type'] . '",';
-            $csv .= $image['source_id'] . ',';
-            $csv .= '"' . str_replace('"', '""', $image['source_name']) . '",';
-            $csv .= $image['http_code'] . ',';
-            $csv .= '"' . $image['error'] . '"' . "\n";
+            $csv .= '"' . $this->escapeCsvField($image['url']) . '",';
+            $csv .= '"' . $this->escapeCsvField($image['source_type']) . '",';
+            $csv .= (int) $image['source_id'] . ',';
+            $csv .= '"' . $this->escapeCsvField($image['source_name']) . '",';
+            $csv .= (int) $image['http_code'] . ',';
+            $csv .= '"' . $this->escapeCsvField($image['error']) . '"' . "\n";
         }
 
         // Redirects
         foreach ($this->results['redirects'] as $redirect) {
             $csv .= '"Redirect",';
-            $csv .= '"' . $redirect['url'] . '",';
-            $csv .= '"' . $redirect['source_type'] . '",';
-            $csv .= $redirect['source_id'] . ',';
-            $csv .= '"' . str_replace('"', '""', $redirect['source_name']) . '",';
-            $csv .= $redirect['http_code'] . ',';
-            $csv .= '"' . $redirect['redirect_url'] . '"' . "\n";
+            $csv .= '"' . $this->escapeCsvField($redirect['url']) . '",';
+            $csv .= '"' . $this->escapeCsvField($redirect['source_type']) . '",';
+            $csv .= (int) $redirect['source_id'] . ',';
+            $csv .= '"' . $this->escapeCsvField($redirect['source_name']) . '",';
+            $csv .= (int) $redirect['http_code'] . ',';
+            $csv .= '"' . $this->escapeCsvField($redirect['redirect_url']) . '"' . "\n";
         }
 
         return $csv;
+    }
+
+    /**
+     * Escape a CSV field value to prevent CSV injection
+     * @param string $field
+     * @return string
+     */
+    protected function escapeCsvField($field)
+    {
+        $field = str_replace('"', '""', (string) $field);
+
+        // Prevent CSV injection: prefix dangerous characters with a single quote
+        if (isset($field[0]) && in_array($field[0], array('=', '+', '-', '@', "\t", "\r"), true)) {
+            $field = "'" . $field;
+        }
+
+        return $field;
     }
 }

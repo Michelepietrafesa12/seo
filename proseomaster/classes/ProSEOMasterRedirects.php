@@ -354,16 +354,33 @@ class ProSEOMasterRedirects
         $csv = "old_url,new_url,redirect_type,hits,last_hit,active,date_add\n";
 
         foreach ($redirects as $redirect) {
-            $csv .= '"' . $redirect['old_url'] . '",';
-            $csv .= '"' . $redirect['new_url'] . '",';
-            $csv .= $redirect['redirect_type'] . ',';
-            $csv .= $redirect['hits'] . ',';
-            $csv .= '"' . ($redirect['last_hit'] ? $redirect['last_hit'] : '') . '",';
-            $csv .= $redirect['active'] . ',';
-            $csv .= '"' . $redirect['date_add'] . '"' . "\n";
+            $csv .= '"' . $this->escapeCsvField($redirect['old_url']) . '",';
+            $csv .= '"' . $this->escapeCsvField($redirect['new_url']) . '",';
+            $csv .= (int) $redirect['redirect_type'] . ',';
+            $csv .= (int) $redirect['hits'] . ',';
+            $csv .= '"' . $this->escapeCsvField($redirect['last_hit'] ? $redirect['last_hit'] : '') . '",';
+            $csv .= (int) $redirect['active'] . ',';
+            $csv .= '"' . $this->escapeCsvField($redirect['date_add']) . '"' . "\n";
         }
 
         return $csv;
+    }
+
+    /**
+     * Escape a CSV field value to prevent CSV injection
+     * @param string $field
+     * @return string
+     */
+    protected function escapeCsvField($field)
+    {
+        $field = str_replace('"', '""', (string) $field);
+
+        // Prevent CSV injection: prefix dangerous characters with a single quote
+        if (isset($field[0]) && in_array($field[0], array('=', '+', '-', '@', "\t", "\r"), true)) {
+            $field = "'" . $field;
+        }
+
+        return $field;
     }
 
     /**
@@ -484,7 +501,8 @@ class ProSEOMasterRedirects
      */
     public function processRedirect()
     {
-        $requestUri = isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '';
+        $requestUri = Tools::getValue('REQUEST_URI', isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '');
+        $requestUri = str_replace("\0", '', $requestUri);
         $redirect = $this->getRedirect($requestUri);
 
         if ($redirect) {
