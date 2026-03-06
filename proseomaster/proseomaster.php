@@ -110,6 +110,9 @@ class ProSEOMaster extends Module
         'PROSEOMASTER_ENABLE_VARIANT_SCHEMA',
     );
 
+    /** @var array Runtime cache to avoid duplicate SQL queries within same request */
+    protected $runtimeCache = array();
+
     public function __construct()
     {
         $this->name = 'proseomaster';
@@ -1231,6 +1234,27 @@ class ProSEOMaster extends Module
      * @return string
      */
     public function hookDisplayHeader($params)
+    {
+        // Global try-catch: never let the module crash the frontend
+        try {
+            return $this->doHookDisplayHeader($params);
+        } catch (Exception $e) {
+            PrestaShopLogger::addLog(
+                'ProSEOMaster hookDisplayHeader error: ' . $e->getMessage(),
+                3,
+                $e->getCode(),
+                'ProSEOMaster'
+            );
+            return '';
+        }
+    }
+
+    /**
+     * Internal implementation of hookDisplayHeader
+     * @param array $params
+     * @return string
+     */
+    protected function doHookDisplayHeader($params)
     {
         $output = '';
         $pageType = $this->getPageType();
@@ -2421,15 +2445,8 @@ class ProSEOMaster extends Module
      */
     protected function generatePromotionSchema($product)
     {
-        // Check if product has a specific price (discount)
-        $specificPrice = SpecificPrice::getSpecificPrice(
-            $product->id,
-            $this->context->shop->id,
-            $this->context->currency->id,
-            $this->context->country->id,
-            $this->context->customer->id_default_group ?? 0,
-            1 // quantity
-        );
+        // Use cached SpecificPrice to avoid duplicate SQL call
+        $specificPrice = $this->getCachedSpecificPrice($product->id);
 
         if (!$specificPrice || empty($specificPrice['reduction'])) {
             return null;
@@ -2543,6 +2560,11 @@ class ProSEOMaster extends Module
      */
     protected function generateReturnPolicySchema()
     {
+        // Cache result - called from both single offer and aggregate offer
+        if (isset($this->runtimeCache['return_policy'])) {
+            return $this->runtimeCache['return_policy'];
+        }
+
         $shopUrl = $this->context->link->getPageLink('index', true);
 
         $returnDays = (int) Configuration::get('PROSEOMASTER_RETURN_DAYS') ?: 14;
@@ -2568,6 +2590,7 @@ class ProSEOMaster extends Module
             $policy['merchantReturnDays'] = $returnDays;
         }
 
+        $this->runtimeCache['return_policy'] = $policy;
         return $policy;
     }
 
@@ -2577,6 +2600,11 @@ class ProSEOMaster extends Module
      */
     protected function generateShippingSchema()
     {
+        // Cache result to avoid duplicate processing
+        if (isset($this->runtimeCache['shipping_schema'])) {
+            return $this->runtimeCache['shipping_schema'];
+        }
+
         $shopUrl = $this->context->link->getPageLink('index', true);
         $currency = $this->context->currency->iso_code;
 
@@ -2623,6 +2651,9 @@ class ProSEOMaster extends Module
                 ),
             ),
         );
+
+        $this->runtimeCache['shipping_schema'] = $schema;
+        return $schema;
     }
 
     /**
@@ -2698,6 +2729,12 @@ class ProSEOMaster extends Module
      */
     protected function getProductBrand($product)
     {
+        // Cache brand per product to avoid repeated Manufacturer/Supplier SQL queries
+        $cacheKey = 'brand_' . (int) $product->id;
+        if (isset($this->runtimeCache[$cacheKey])) {
+            return $this->runtimeCache[$cacheKey];
+        }
+
         $brandField = Configuration::get('PROSEOMASTER_BRAND_FIELD');
 
         switch ($brandField) {
@@ -2705,6 +2742,7 @@ class ProSEOMaster extends Module
                 if ((int) $product->id_manufacturer > 0) {
                     $manufacturer = new Manufacturer((int) $product->id_manufacturer, $this->context->language->id);
                     if (Validate::isLoadedObject($manufacturer)) {
+                        $this->runtimeCache[$cacheKey] = $manufacturer->name;
                         return $manufacturer->name;
                     }
                 }
@@ -2713,21 +2751,26 @@ class ProSEOMaster extends Module
                 if ((int) $product->id_supplier > 0) {
                     $supplier = new Supplier((int) $product->id_supplier, $this->context->language->id);
                     if (Validate::isLoadedObject($supplier)) {
+                        $this->runtimeCache[$cacheKey] = $supplier->name;
                         return $supplier->name;
                     }
                 }
                 break;
             case 'shop_name':
-                return Configuration::get('PS_SHOP_NAME');
+                $this->runtimeCache[$cacheKey] = Configuration::get('PS_SHOP_NAME');
+                return $this->runtimeCache[$cacheKey];
         }
 
         // Fallback: use custom default brand, then shop name (required by Google)
         $defaultBrand = Configuration::get('PROSEOMASTER_DEFAULT_BRAND');
         if (!empty($defaultBrand)) {
+            $this->runtimeCache[$cacheKey] = $defaultBrand;
             return $defaultBrand;
         }
 
-        return Configuration::get('PS_SHOP_NAME');
+        $result = Configuration::get('PS_SHOP_NAME');
+        $this->runtimeCache[$cacheKey] = $result;
+        return $result;
     }
 
     /**
@@ -2744,6 +2787,27 @@ class ProSEOMaster extends Module
         );
 
         return isset($conditions[$condition]) ? $conditions[$condition] : 'https://schema.org/NewCondition';
+    }
+
+    /**
+     * Get cached SpecificPrice for a product (avoids duplicate SQL queries)
+     * @param int $idProduct
+     * @return array|false
+     */
+    protected function getCachedSpecificPrice($idProduct)
+    {
+        $cacheKey = 'specific_price_' . (int) $idProduct;
+        if (!isset($this->runtimeCache[$cacheKey])) {
+            $this->runtimeCache[$cacheKey] = SpecificPrice::getSpecificPrice(
+                (int) $idProduct,
+                $this->context->shop->id,
+                $this->context->currency->id,
+                $this->context->country->id,
+                $this->context->customer->id_default_group ?? 0,
+                1
+            );
+        }
+        return $this->runtimeCache[$cacheKey];
     }
 
     /**
@@ -2784,15 +2848,8 @@ class ProSEOMaster extends Module
             'name' => $shopName,
         );
 
-        // Price valid until (for discounts) - use proper SpecificPrice API
-        $specificPrice = SpecificPrice::getSpecificPrice(
-            $product->id,
-            $this->context->shop->id,
-            $this->context->currency->id,
-            $this->context->country->id,
-            $this->context->customer->id_default_group ?? 0,
-            1
-        );
+        // Price valid until (for discounts) - cached to avoid duplicate SQL
+        $specificPrice = $this->getCachedSpecificPrice($product->id);
 
         if ($specificPrice && !empty($specificPrice['to']) && $specificPrice['to'] !== '0000-00-00 00:00:00') {
             $offer['priceValidUntil'] = date('Y-m-d', strtotime($specificPrice['to']));
@@ -2928,45 +2985,11 @@ class ProSEOMaster extends Module
      */
     protected function getShippingInfo($product)
     {
-        // Get default carrier
-        $carriers = Carrier::getCarriersForOrder(
-            $this->context->country->id_zone,
-            null,
-            $this->context->cart,
-            null,
-            null,
-            PS_CARRIERS_ONLY
-        );
-
-        if (empty($carriers)) {
-            return null;
+        // Use cached shipping schema to avoid redundant SQL calls
+        if (!isset($this->runtimeCache['shipping_schema'])) {
+            $this->runtimeCache['shipping_schema'] = $this->generateShippingSchema();
         }
-
-        $carrier = reset($carriers);
-        $deliveryTime = $carrier['delay'];
-
-        return array(
-            '@type' => 'OfferShippingDetails',
-            'shippingDestination' => array(
-                '@type' => 'DefinedRegion',
-                'addressCountry' => $this->context->country->iso_code,
-            ),
-            'deliveryTime' => array(
-                '@type' => 'ShippingDeliveryTime',
-                'handlingTime' => array(
-                    '@type' => 'QuantitativeValue',
-                    'minValue' => 0,
-                    'maxValue' => 2,
-                    'unitCode' => 'DAY',
-                ),
-                'transitTime' => array(
-                    '@type' => 'QuantitativeValue',
-                    'minValue' => 1,
-                    'maxValue' => 7,
-                    'unitCode' => 'DAY',
-                ),
-            ),
-        );
+        return $this->runtimeCache['shipping_schema'];
     }
 
     /**
@@ -3574,6 +3597,25 @@ class ProSEOMaster extends Module
             return;
         }
 
+        // Global try-catch: never let the module crash the frontend
+        try {
+            $this->doHookActionOutputHTMLBefore($params);
+        } catch (Exception $e) {
+            PrestaShopLogger::addLog(
+                'ProSEOMaster hookActionOutputHTMLBefore error: ' . $e->getMessage(),
+                3,
+                $e->getCode(),
+                'ProSEOMaster'
+            );
+        }
+    }
+
+    /**
+     * Internal implementation of hookActionOutputHTMLBefore
+     * @param array &$params
+     */
+    protected function doHookActionOutputHTMLBefore(&$params)
+    {
         $html = $params['html'];
         $pageType = $this->getPageType();
 

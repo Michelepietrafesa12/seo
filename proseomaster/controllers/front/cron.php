@@ -87,9 +87,15 @@ class ProSEOMasterCronModuleFrontController extends ModuleFrontController
                 ), 500);
             }
         } catch (Exception $e) {
+            PrestaShopLogger::addLog(
+                'ProSEOMaster cron sitemap error: ' . $e->getMessage(),
+                3,
+                $e->getCode(),
+                'ProSEOMaster'
+            );
             $this->outputJson(array(
                 'success' => false,
-                'error' => $e->getMessage(),
+                'error' => 'Internal error during sitemap generation',
             ), 500);
         }
     }
@@ -118,9 +124,15 @@ class ProSEOMasterCronModuleFrontController extends ModuleFrontController
                 ), 500);
             }
         } catch (Exception $e) {
+            PrestaShopLogger::addLog(
+                'ProSEOMaster cron robots error: ' . $e->getMessage(),
+                3,
+                $e->getCode(),
+                'ProSEOMaster'
+            );
             $this->outputJson(array(
                 'success' => false,
-                'error' => $e->getMessage(),
+                'error' => 'Internal error during robots.txt generation',
             ), 500);
         }
     }
