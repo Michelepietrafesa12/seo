@@ -4318,30 +4318,27 @@ class ProSEOMaster extends Module
      */
     public function hookActionDispatcher($params)
     {
-        // Only process on 404 errors
-        if (http_response_code() !== 404) {
-            // Check if URL exists in redirects anyway
-            $redirects = new ProSEOMasterRedirects();
-            $requestUri = $this->getRequestUri();
-            $redirect = $redirects->getRedirect($requestUri);
+        // Check if URL exists in redirects table and perform redirect if found
+        $redirects = new ProSEOMasterRedirects();
+        $requestUri = $this->getRequestUri();
+        $redirect = $redirects->getRedirect($requestUri);
 
-            if ($redirect) {
-                $newUrl = $redirect['new_url'];
+        if ($redirect) {
+            $newUrl = $redirect['new_url'];
 
-                // Make absolute URL if needed
-                if (strpos($newUrl, 'http') !== 0) {
-                    $baseUrl = $this->context->link->getBaseLink();
-                    $newUrl = rtrim($baseUrl, '/') . $newUrl;
-                }
-
-                $validTypes = array(301, 302, 303, 307, 308);
-                $type = in_array((int) $redirect['redirect_type'], $validTypes, true) ? (int) $redirect['redirect_type'] : 301;
-                $statusTexts = array(301 => 'Moved Permanently', 302 => 'Found', 303 => 'See Other', 307 => 'Temporary Redirect', 308 => 'Permanent Redirect');
-                header('HTTP/1.1 ' . $type . ' ' . $statusTexts[$type]);
-                header('Location: ' . $newUrl);
-                header('Connection: close');
-                exit;
+            // Make absolute URL if needed
+            if (strpos($newUrl, 'http') !== 0) {
+                $baseUrl = $this->context->link->getBaseLink();
+                $newUrl = rtrim($baseUrl, '/') . $newUrl;
             }
+
+            $validTypes = array(301, 302, 303, 307, 308);
+            $type = in_array((int) $redirect['redirect_type'], $validTypes, true) ? (int) $redirect['redirect_type'] : 301;
+            $statusTexts = array(301 => 'Moved Permanently', 302 => 'Found', 303 => 'See Other', 307 => 'Temporary Redirect', 308 => 'Permanent Redirect');
+            header('HTTP/1.1 ' . $type . ' ' . $statusTexts[$type]);
+            header('Location: ' . $newUrl);
+            header('Connection: close');
+            exit;
         }
     }
 
