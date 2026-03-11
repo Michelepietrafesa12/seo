@@ -4472,8 +4472,8 @@ class ProSEOMaster extends Module
             $output .= $this->importSeoDataAction();
         }
 
-        // Render dashboard + forms + all sections
-        return $output . $this->renderDashboard() . $this->renderRedirectManager() . $this->renderLinkChecker() . $this->renderSchemaTester() . $this->renderBulkEditor() . $this->renderForm() . $this->renderAdvancedForm();
+        // Render modern admin interface
+        return $output . $this->renderModernAdmin();
     }
 
     /**
@@ -5673,6 +5673,1249 @@ class ProSEOMaster extends Module
         $html .= '</div>';
 
         $html .= '</div>';
+
+        return $html;
+    }
+
+    // =========================================================================
+    // MODERN ADMIN INTERFACE
+    // =========================================================================
+
+    /**
+     * Render modern admin interface
+     * @return string
+     */
+    protected function renderModernAdmin()
+    {
+        $html = $this->renderAdminStyles();
+        $html .= '<div class="proseo-admin-wrapper">';
+        $html .= $this->renderAdminHeader();
+        $html .= '<div class="proseo-main">';
+        $html .= $this->renderAdminSidebar();
+        $html .= '<div class="proseo-content">';
+
+        // All sections
+        $html .= $this->renderSectionDashboard();
+        $html .= $this->renderSectionSchema();
+        $html .= $this->renderSectionMeta();
+        $html .= $this->renderSectionPerformance();
+        $html .= $this->renderSectionSitemap();
+        $html .= $this->renderSectionRedirects();
+        $html .= $this->renderSectionTools();
+        $html .= $this->renderSectionAI();
+
+        $html .= '</div>'; // proseo-content
+        $html .= '</div>'; // proseo-main
+        $html .= '</div>'; // proseo-admin-wrapper
+        $html .= $this->renderAdminScripts();
+
+        return $html;
+    }
+
+    /**
+     * Include admin CSS
+     * @return string
+     */
+    protected function renderAdminStyles()
+    {
+        $cssPath = $this->_path . 'views/css/admin.css';
+        return '<link rel="stylesheet" href="' . htmlspecialchars($cssPath, ENT_QUOTES, 'UTF-8') . '">';
+    }
+
+    /**
+     * Include admin JS
+     * @return string
+     */
+    protected function renderAdminScripts()
+    {
+        $jsPath = $this->_path . 'views/js/admin.js';
+        return '<script src="' . htmlspecialchars($jsPath, ENT_QUOTES, 'UTF-8') . '"></script>';
+    }
+
+    /**
+     * Render admin header
+     * @return string
+     */
+    protected function renderAdminHeader()
+    {
+        $html = '<div class="proseo-header">';
+        $html .= '<div class="proseo-header-left">';
+        $html .= '<div class="proseo-logo"><i class="material-icons">trending_up</i></div>';
+        $html .= '<div class="proseo-header-title">';
+        $html .= '<h1>ProSEO Master</h1>';
+        $html .= '<div class="version">v' . $this->version . ' - Advanced SEO & Schema</div>';
+        $html .= '</div>';
+        $html .= '</div>';
+
+        $html .= '<div class="proseo-header-right">';
+        $shopUrl = $this->context->link->getPageLink('index', true);
+        $html .= '<a href="' . htmlspecialchars($shopUrl . 'sitemap.xml', ENT_QUOTES, 'UTF-8') . '" target="_blank" class="proseo-header-btn">';
+        $html .= '<i class="material-icons">map</i> ' . $this->l('View Sitemap');
+        $html .= '</a>';
+        $html .= '<a href="https://search.google.com/search-console" target="_blank" class="proseo-header-btn">';
+        $html .= '<i class="material-icons">analytics</i> ' . $this->l('Search Console');
+        $html .= '</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+
+        return $html;
+    }
+
+    /**
+     * Render admin sidebar navigation
+     * @return string
+     */
+    protected function renderAdminSidebar()
+    {
+        $missingMeta = $this->getMissingMetaCount();
+
+        $html = '<div class="proseo-sidebar">';
+
+        // Main Navigation
+        $html .= '<div class="proseo-nav-section">';
+        $html .= '<div class="proseo-nav-section-title">' . $this->l('Overview') . '</div>';
+        $html .= '<button type="button" class="proseo-nav-item active" data-section="dashboard">';
+        $html .= '<i class="material-icons">dashboard</i> ' . $this->l('Dashboard');
+        $html .= '</button>';
+        $html .= '</div>';
+
+        // SEO Settings
+        $html .= '<div class="proseo-nav-section">';
+        $html .= '<div class="proseo-nav-section-title">' . $this->l('SEO Settings') . '</div>';
+
+        $html .= '<button type="button" class="proseo-nav-item" data-section="schema">';
+        $html .= '<i class="material-icons">code</i> ' . $this->l('Schema Markup');
+        $html .= '</button>';
+
+        $html .= '<button type="button" class="proseo-nav-item" data-section="meta">';
+        $html .= '<i class="material-icons">text_fields</i> ' . $this->l('Meta & Content');
+        if ($missingMeta > 0) {
+            $html .= '<span class="proseo-nav-badge">' . $missingMeta . '</span>';
+        }
+        $html .= '</button>';
+
+        $html .= '<button type="button" class="proseo-nav-item" data-section="performance">';
+        $html .= '<i class="material-icons">speed</i> ' . $this->l('Performance');
+        $html .= '</button>';
+
+        $html .= '<button type="button" class="proseo-nav-item" data-section="sitemap">';
+        $html .= '<i class="material-icons">map</i> ' . $this->l('Sitemap & Robots');
+        $html .= '</button>';
+        $html .= '</div>';
+
+        // Tools
+        $html .= '<div class="proseo-nav-section">';
+        $html .= '<div class="proseo-nav-section-title">' . $this->l('Tools') . '</div>';
+
+        $html .= '<button type="button" class="proseo-nav-item" data-section="redirects">';
+        $html .= '<i class="material-icons">call_split</i> ' . $this->l('Redirects 301');
+        $html .= '</button>';
+
+        $html .= '<button type="button" class="proseo-nav-item" data-section="tools">';
+        $html .= '<i class="material-icons">build</i> ' . $this->l('SEO Tools');
+        $html .= '</button>';
+
+        $html .= '<button type="button" class="proseo-nav-item" data-section="ai">';
+        $html .= '<i class="material-icons">smart_toy</i> ' . $this->l('AI SEO');
+        $html .= '</button>';
+
+        $html .= '</div>';
+
+        $html .= '</div>';
+
+        return $html;
+    }
+
+    /**
+     * Render Dashboard section
+     * @return string
+     */
+    protected function renderSectionDashboard()
+    {
+        $productCount = $this->getActiveProductCount();
+        $categoryCount = $this->getActiveCategoryCount();
+        $missingMeta = $this->getMissingMetaCount();
+        $sitemapDate = Configuration::get('PROSEOMASTER_SITEMAP_LAST_GENERATED');
+        $redirects = new ProSEOMasterRedirects();
+        $redirectStats = $redirects->getStatistics();
+
+        // Calculate SEO score
+        $seoScore = $this->calculateSeoScore($productCount, $missingMeta);
+
+        $html = '<div id="section-dashboard" class="proseo-section active">';
+
+        // Section Header
+        $html .= '<div class="proseo-section-header">';
+        $html .= '<h2>' . $this->l('SEO Dashboard') . '</h2>';
+        $html .= '<p>' . $this->l('Overview of your store SEO health and quick actions.') . '</p>';
+        $html .= '</div>';
+
+        // Stats Grid
+        $html .= '<div class="proseo-stats-grid">';
+
+        // SEO Score
+        $html .= '<div class="proseo-stat-card primary">';
+        $html .= '<div class="proseo-stat-value">' . $seoScore . '%</div>';
+        $html .= '<div class="proseo-stat-label">' . $this->l('SEO Score') . '</div>';
+        $html .= '<div class="proseo-progress"><div class="proseo-progress-bar ' . ($seoScore >= 80 ? 'success' : ($seoScore >= 60 ? 'warning' : 'danger')) . '" style="width:' . $seoScore . '%"></div></div>';
+        $html .= '<i class="material-icons proseo-stat-icon">analytics</i>';
+        $html .= '</div>';
+
+        // Products
+        $html .= '<div class="proseo-stat-card success">';
+        $html .= '<div class="proseo-stat-value">' . $productCount . '</div>';
+        $html .= '<div class="proseo-stat-label">' . $this->l('Active Products') . '</div>';
+        $html .= '<i class="material-icons proseo-stat-icon">inventory_2</i>';
+        $html .= '</div>';
+
+        // Categories
+        $html .= '<div class="proseo-stat-card secondary">';
+        $html .= '<div class="proseo-stat-value">' . $categoryCount . '</div>';
+        $html .= '<div class="proseo-stat-label">' . $this->l('Categories') . '</div>';
+        $html .= '<i class="material-icons proseo-stat-icon">folder</i>';
+        $html .= '</div>';
+
+        // Missing Meta
+        $html .= '<div class="proseo-stat-card ' . ($missingMeta > 0 ? 'danger' : 'success') . '">';
+        $html .= '<div class="proseo-stat-value">' . $missingMeta . '</div>';
+        $html .= '<div class="proseo-stat-label">' . $this->l('Missing Meta Tags') . '</div>';
+        $html .= '<i class="material-icons proseo-stat-icon">warning</i>';
+        $html .= '</div>';
+
+        // Redirects
+        $html .= '<div class="proseo-stat-card warning">';
+        $html .= '<div class="proseo-stat-value">' . $redirectStats['total'] . '</div>';
+        $html .= '<div class="proseo-stat-label">' . $this->l('Active Redirects') . '</div>';
+        $html .= '<i class="material-icons proseo-stat-icon">call_split</i>';
+        $html .= '</div>';
+
+        $html .= '</div>'; // stats-grid
+
+        // Quick Actions
+        $html .= '<div class="proseo-card">';
+        $html .= '<div class="proseo-card-header">';
+        $html .= '<h3><i class="material-icons">flash_on</i> ' . $this->l('Quick Actions') . '</h3>';
+        $html .= '</div>';
+        $html .= '<div class="proseo-card-body">';
+
+        $html .= '<div class="proseo-actions-grid">';
+
+        // Generate Sitemap
+        $html .= '<form method="post" class="proseo-action-form">';
+        $html .= '<button type="submit" name="generateSitemap" class="proseo-action-card">';
+        $html .= '<div class="proseo-action-icon blue"><i class="material-icons">map</i></div>';
+        $html .= '<div class="proseo-action-text">';
+        $html .= '<h4>' . $this->l('Generate Sitemap') . '</h4>';
+        $html .= '<p>' . ($sitemapDate ? $this->l('Last:') . ' ' . date('d/m/Y H:i', strtotime($sitemapDate)) : $this->l('Not generated yet')) . '</p>';
+        $html .= '</div>';
+        $html .= '</button>';
+        $html .= '</form>';
+
+        // Generate Robots
+        $html .= '<form method="post" class="proseo-action-form">';
+        $html .= '<button type="submit" name="generateRobots" class="proseo-action-card">';
+        $html .= '<div class="proseo-action-icon green"><i class="material-icons">android</i></div>';
+        $html .= '<div class="proseo-action-text">';
+        $html .= '<h4>' . $this->l('Generate Robots.txt') . '</h4>';
+        $html .= '<p>' . $this->l('Create optimized robots.txt') . '</p>';
+        $html .= '</div>';
+        $html .= '</button>';
+        $html .= '</form>';
+
+        // Run SEO Audit
+        $html .= '<form method="post" class="proseo-action-form">';
+        $html .= '<button type="submit" name="runSeoAudit" class="proseo-action-card">';
+        $html .= '<div class="proseo-action-icon orange"><i class="material-icons">search</i></div>';
+        $html .= '<div class="proseo-action-text">';
+        $html .= '<h4>' . $this->l('Run SEO Audit') . '</h4>';
+        $html .= '<p>' . $this->l('Analyze products & categories') . '</p>';
+        $html .= '</div>';
+        $html .= '</button>';
+        $html .= '</form>';
+
+        // Generate .htaccess
+        $html .= '<form method="post" class="proseo-action-form">';
+        $html .= '<button type="submit" name="generateHtaccess" class="proseo-action-card">';
+        $html .= '<div class="proseo-action-icon cyan"><i class="material-icons">security</i></div>';
+        $html .= '<div class="proseo-action-text">';
+        $html .= '<h4>' . $this->l('Performance Rules') . '</h4>';
+        $html .= '<p>' . $this->l('Generate .htaccess rules') . '</p>';
+        $html .= '</div>';
+        $html .= '</button>';
+        $html .= '</form>';
+
+        $html .= '</div>'; // actions-grid
+        $html .= '</div>'; // card-body
+        $html .= '</div>'; // card
+
+        // Info Box
+        $html .= '<div class="proseo-info-box">';
+        $html .= '<h4><i class="material-icons">tips_and_updates</i> ' . $this->l('SEO Tips') . '</h4>';
+        $html .= '<ul>';
+        $html .= '<li>' . $this->l('Meta titles should be 50-60 characters') . '</li>';
+        $html .= '<li>' . $this->l('Meta descriptions should be 150-160 characters') . '</li>';
+        $html .= '<li>' . $this->l('Regenerate sitemap after adding new products') . '</li>';
+        $html .= '<li>' . $this->l('Check broken links monthly') . '</li>';
+        $html .= '</ul>';
+        $html .= '</div>';
+
+        $html .= '</div>'; // section-dashboard
+
+        return $html;
+    }
+
+    /**
+     * Calculate SEO score
+     * @param int $productCount
+     * @param int $missingMeta
+     * @return int
+     */
+    protected function calculateSeoScore($productCount, $missingMeta)
+    {
+        if ($productCount == 0) {
+            return 100;
+        }
+
+        $withMeta = $productCount - $missingMeta;
+        $score = (int) round(($withMeta / $productCount) * 100);
+
+        // Bonus points for having sitemap generated
+        if (Configuration::get('PROSEOMASTER_SITEMAP_LAST_GENERATED')) {
+            $score = min(100, $score + 5);
+        }
+
+        // Bonus for schema enabled
+        if (Configuration::get('PROSEOMASTER_ENABLE_PRODUCT_SCHEMA')) {
+            $score = min(100, $score + 5);
+        }
+
+        return max(0, min(100, $score));
+    }
+
+    /**
+     * Render Schema Markup section
+     * @return string
+     */
+    protected function renderSectionSchema()
+    {
+        $html = '<div id="section-schema" class="proseo-section">';
+
+        $html .= '<div class="proseo-section-header">';
+        $html .= '<h2>' . $this->l('Schema Markup') . '</h2>';
+        $html .= '<p>' . $this->l('Configure structured data (JSON-LD) for rich results in search engines.') . '</p>';
+        $html .= '</div>';
+
+        $html .= '<form method="post" id="schema-form">';
+
+        // Product Schema Card
+        $html .= '<div class="proseo-card">';
+        $html .= '<div class="proseo-card-header">';
+        $html .= '<h3><i class="material-icons">shopping_bag</i> ' . $this->l('Product Schema') . '</h3>';
+        $html .= '</div>';
+        $html .= '<div class="proseo-card-body">';
+
+        $html .= $this->renderToggle('PROSEOMASTER_ENABLE_PRODUCT_SCHEMA', $this->l('Enable Product Schema'), $this->l('Add Product structured data to product pages'));
+        $html .= $this->renderToggle('PROSEOMASTER_ENABLE_REVIEW_SCHEMA', $this->l('Enable Review Schema'), $this->l('Include product reviews and ratings'));
+        $html .= $this->renderToggle('PROSEOMASTER_ENABLE_VARIANT_SCHEMA', $this->l('Enable Variant Schema'), $this->l('Add variant data for product combinations'));
+
+        // Field Mapping
+        $html .= '<div class="proseo-field-row" style="margin-top:20px;">';
+
+        $html .= '<div class="proseo-form-group">';
+        $html .= '<label>' . $this->l('GTIN Field') . '</label>';
+        $html .= '<select name="PROSEOMASTER_GTIN_FIELD" class="proseo-select">';
+        $gtinField = Configuration::get('PROSEOMASTER_GTIN_FIELD');
+        $html .= '<option value="ean13"' . ($gtinField == 'ean13' ? ' selected' : '') . '>EAN13</option>';
+        $html .= '<option value="reference"' . ($gtinField == 'reference' ? ' selected' : '') . '>' . $this->l('Reference') . '</option>';
+        $html .= '<option value="supplier_reference"' . ($gtinField == 'supplier_reference' ? ' selected' : '') . '>' . $this->l('Supplier Reference') . '</option>';
+        $html .= '<option value="none"' . ($gtinField == 'none' ? ' selected' : '') . '>' . $this->l('None') . '</option>';
+        $html .= '</select>';
+        $html .= '<div class="hint">' . $this->l('Which field to use as GTIN in schema') . '</div>';
+        $html .= '</div>';
+
+        $html .= '<div class="proseo-form-group">';
+        $html .= '<label>' . $this->l('Brand Field') . '</label>';
+        $html .= '<select name="PROSEOMASTER_BRAND_FIELD" class="proseo-select">';
+        $brandField = Configuration::get('PROSEOMASTER_BRAND_FIELD');
+        $html .= '<option value="manufacturer"' . ($brandField == 'manufacturer' ? ' selected' : '') . '>' . $this->l('Manufacturer') . '</option>';
+        $html .= '<option value="supplier"' . ($brandField == 'supplier' ? ' selected' : '') . '>' . $this->l('Supplier') . '</option>';
+        $html .= '<option value="shop_name"' . ($brandField == 'shop_name' ? ' selected' : '') . '>' . $this->l('Shop Name') . '</option>';
+        $html .= '</select>';
+        $html .= '</div>';
+
+        $html .= '</div>'; // field-row
+
+        $html .= '</div>'; // card-body
+        $html .= '</div>'; // card
+
+        // Organization Schema Card
+        $html .= '<div class="proseo-card">';
+        $html .= '<div class="proseo-card-header">';
+        $html .= '<h3><i class="material-icons">business</i> ' . $this->l('Organization Schema') . '</h3>';
+        $html .= '</div>';
+        $html .= '<div class="proseo-card-body">';
+
+        $html .= $this->renderToggle('PROSEOMASTER_ENABLE_ORGANIZATION_SCHEMA', $this->l('Enable Organization Schema'), $this->l('Add organization data for knowledge panel'));
+        $html .= $this->renderToggle('PROSEOMASTER_ENABLE_WEBSITE_SCHEMA', $this->l('Enable Website Schema'), $this->l('Enable sitelinks searchbox in Google'));
+        $html .= $this->renderToggle('PROSEOMASTER_ENABLE_LOCAL_BUSINESS', $this->l('Enable LocalBusiness'), $this->l('For physical stores with a location'));
+
+        $html .= '<div class="proseo-field-row" style="margin-top:20px;">';
+
+        $html .= '<div class="proseo-form-group">';
+        $html .= '<label>' . $this->l('Organization Name') . '</label>';
+        $html .= '<input type="text" name="PROSEOMASTER_ORGANIZATION_NAME" class="proseo-input" value="' . htmlspecialchars(Configuration::get('PROSEOMASTER_ORGANIZATION_NAME'), ENT_QUOTES, 'UTF-8') . '">';
+        $html .= '</div>';
+
+        $html .= '<div class="proseo-form-group">';
+        $html .= '<label>' . $this->l('Organization Logo URL') . '</label>';
+        $html .= '<input type="text" name="PROSEOMASTER_ORGANIZATION_LOGO" class="proseo-input" value="' . htmlspecialchars(Configuration::get('PROSEOMASTER_ORGANIZATION_LOGO'), ENT_QUOTES, 'UTF-8') . '">';
+        $html .= '</div>';
+
+        $html .= '</div>';
+
+        $html .= '<div class="proseo-field-row">';
+
+        $html .= '<div class="proseo-form-group">';
+        $html .= '<label>' . $this->l('Phone Number') . '</label>';
+        $html .= '<input type="text" name="PROSEOMASTER_ORGANIZATION_PHONE" class="proseo-input" value="' . htmlspecialchars(Configuration::get('PROSEOMASTER_ORGANIZATION_PHONE'), ENT_QUOTES, 'UTF-8') . '">';
+        $html .= '</div>';
+
+        $html .= '<div class="proseo-form-group">';
+        $html .= '<label>' . $this->l('Email') . '</label>';
+        $html .= '<input type="email" name="PROSEOMASTER_ORGANIZATION_EMAIL" class="proseo-input" value="' . htmlspecialchars(Configuration::get('PROSEOMASTER_ORGANIZATION_EMAIL'), ENT_QUOTES, 'UTF-8') . '">';
+        $html .= '</div>';
+
+        $html .= '</div>';
+
+        $html .= '</div>'; // card-body
+        $html .= '</div>'; // card
+
+        // Other Schema Card
+        $html .= '<div class="proseo-card">';
+        $html .= '<div class="proseo-card-header">';
+        $html .= '<h3><i class="material-icons">extension</i> ' . $this->l('Additional Schema') . '</h3>';
+        $html .= '</div>';
+        $html .= '<div class="proseo-card-body">';
+
+        $html .= $this->renderToggle('PROSEOMASTER_ENABLE_BREADCRUMB_SCHEMA', $this->l('Enable Breadcrumb Schema'), $this->l('Add breadcrumb navigation to search results'));
+        $html .= $this->renderToggle('PROSEOMASTER_ENABLE_FAQ_SCHEMA', $this->l('Enable FAQ Schema'), $this->l('Generate FAQ from product attributes'));
+        $html .= $this->renderToggle('PROSEOMASTER_ENABLE_COLLECTION_SCHEMA', $this->l('Enable CollectionPage'), $this->l('For category pages'));
+        $html .= $this->renderToggle('PROSEOMASTER_ENABLE_MERCHANT_SCHEMA', $this->l('Enable Merchant Listing'), $this->l('For Google Shopping integration'));
+
+        $html .= '</div>'; // card-body
+        $html .= '</div>'; // card
+
+        // Social Media Card
+        $html .= '<div class="proseo-card">';
+        $html .= '<div class="proseo-card-header">';
+        $html .= '<h3><i class="material-icons">share</i> ' . $this->l('Social Profiles') . '</h3>';
+        $html .= '</div>';
+        $html .= '<div class="proseo-card-body">';
+
+        $html .= '<div class="proseo-field-row">';
+        $html .= '<div class="proseo-form-group">';
+        $html .= '<label>Facebook</label>';
+        $html .= '<input type="url" name="PROSEOMASTER_SOCIAL_FACEBOOK" class="proseo-input" placeholder="https://facebook.com/yourpage" value="' . htmlspecialchars(Configuration::get('PROSEOMASTER_SOCIAL_FACEBOOK'), ENT_QUOTES, 'UTF-8') . '">';
+        $html .= '</div>';
+        $html .= '<div class="proseo-form-group">';
+        $html .= '<label>Instagram</label>';
+        $html .= '<input type="url" name="PROSEOMASTER_SOCIAL_INSTAGRAM" class="proseo-input" placeholder="https://instagram.com/yourpage" value="' . htmlspecialchars(Configuration::get('PROSEOMASTER_SOCIAL_INSTAGRAM'), ENT_QUOTES, 'UTF-8') . '">';
+        $html .= '</div>';
+        $html .= '</div>';
+
+        $html .= '<div class="proseo-field-row">';
+        $html .= '<div class="proseo-form-group">';
+        $html .= '<label>Twitter / X</label>';
+        $html .= '<input type="url" name="PROSEOMASTER_SOCIAL_TWITTER" class="proseo-input" placeholder="https://twitter.com/yourpage" value="' . htmlspecialchars(Configuration::get('PROSEOMASTER_SOCIAL_TWITTER'), ENT_QUOTES, 'UTF-8') . '">';
+        $html .= '</div>';
+        $html .= '<div class="proseo-form-group">';
+        $html .= '<label>LinkedIn</label>';
+        $html .= '<input type="url" name="PROSEOMASTER_SOCIAL_LINKEDIN" class="proseo-input" placeholder="https://linkedin.com/company/yourcompany" value="' . htmlspecialchars(Configuration::get('PROSEOMASTER_SOCIAL_LINKEDIN'), ENT_QUOTES, 'UTF-8') . '">';
+        $html .= '</div>';
+        $html .= '</div>';
+
+        $html .= '<div class="proseo-field-row">';
+        $html .= '<div class="proseo-form-group">';
+        $html .= '<label>YouTube</label>';
+        $html .= '<input type="url" name="PROSEOMASTER_SOCIAL_YOUTUBE" class="proseo-input" placeholder="https://youtube.com/c/yourchannel" value="' . htmlspecialchars(Configuration::get('PROSEOMASTER_SOCIAL_YOUTUBE'), ENT_QUOTES, 'UTF-8') . '">';
+        $html .= '</div>';
+        $html .= '<div class="proseo-form-group">';
+        $html .= '<label>Pinterest</label>';
+        $html .= '<input type="url" name="PROSEOMASTER_SOCIAL_PINTEREST" class="proseo-input" placeholder="https://pinterest.com/yourpage" value="' . htmlspecialchars(Configuration::get('PROSEOMASTER_SOCIAL_PINTEREST'), ENT_QUOTES, 'UTF-8') . '">';
+        $html .= '</div>';
+        $html .= '</div>';
+
+        $html .= '</div>'; // card-body
+        $html .= '</div>'; // card
+
+        // Save Button
+        $html .= '<div class="proseo-btn-group">';
+        $html .= '<button type="submit" name="submitProSEOMasterConfig" class="proseo-btn proseo-btn-primary proseo-btn-lg">';
+        $html .= '<i class="material-icons">save</i> ' . $this->l('Save Settings');
+        $html .= '</button>';
+        $html .= '</div>';
+
+        $html .= '</form>';
+        $html .= '</div>'; // section-schema
+
+        return $html;
+    }
+
+    /**
+     * Render toggle switch helper
+     * @param string $configKey
+     * @param string $label
+     * @param string $hint
+     * @return string
+     */
+    protected function renderToggle($configKey, $label, $hint = '')
+    {
+        $checked = (int) Configuration::get($configKey);
+
+        $html = '<div class="proseo-toggle">';
+        $html .= '<div class="proseo-toggle-label">';
+        $html .= $label;
+        if ($hint) {
+            $html .= '<small>' . $hint . '</small>';
+        }
+        $html .= '</div>';
+        $html .= '<label class="proseo-switch">';
+        $html .= '<input type="hidden" name="' . $configKey . '" value="0">';
+        $html .= '<input type="checkbox" name="' . $configKey . '" value="1"' . ($checked ? ' checked' : '') . '>';
+        $html .= '<span class="proseo-switch-slider"></span>';
+        $html .= '</label>';
+        $html .= '</div>';
+
+        return $html;
+    }
+
+    /**
+     * Render Meta & Content section
+     * @return string
+     */
+    protected function renderSectionMeta()
+    {
+        $html = '<div id="section-meta" class="proseo-section">';
+
+        $html .= '<div class="proseo-section-header">';
+        $html .= '<h2>' . $this->l('Meta Tags & Content') . '</h2>';
+        $html .= '<p>' . $this->l('Configure meta tags, Open Graph, Twitter Cards, and SEO technical settings.') . '</p>';
+        $html .= '</div>';
+
+        $html .= '<form method="post" id="meta-form">';
+
+        // Open Graph & Twitter
+        $html .= '<div class="proseo-card">';
+        $html .= '<div class="proseo-card-header">';
+        $html .= '<h3><i class="material-icons">share</i> ' . $this->l('Open Graph & Twitter Cards') . '</h3>';
+        $html .= '</div>';
+        $html .= '<div class="proseo-card-body">';
+
+        $html .= $this->renderToggle('PROSEOMASTER_ENABLE_OG_TAGS', $this->l('Enable Open Graph Tags'), $this->l('For Facebook, LinkedIn sharing'));
+        $html .= $this->renderToggle('PROSEOMASTER_ENABLE_TWITTER_CARDS', $this->l('Enable Twitter Cards'), $this->l('Enhanced Twitter sharing'));
+
+        $html .= '<div class="proseo-field-row" style="margin-top:20px;">';
+        $html .= '<div class="proseo-form-group">';
+        $html .= '<label>' . $this->l('Twitter @username') . '</label>';
+        $html .= '<input type="text" name="PROSEOMASTER_TWITTER_SITE" class="proseo-input" placeholder="@yourhandle" value="' . htmlspecialchars(Configuration::get('PROSEOMASTER_TWITTER_SITE'), ENT_QUOTES, 'UTF-8') . '">';
+        $html .= '</div>';
+        $html .= '<div class="proseo-form-group">';
+        $html .= '<label>' . $this->l('Default OG Image URL') . '</label>';
+        $html .= '<input type="text" name="PROSEOMASTER_DEFAULT_OG_IMAGE" class="proseo-input" placeholder="https://yoursite.com/default-share.jpg" value="' . htmlspecialchars(Configuration::get('PROSEOMASTER_DEFAULT_OG_IMAGE'), ENT_QUOTES, 'UTF-8') . '">';
+        $html .= '<div class="hint">' . $this->l('Fallback image when product has no image') . '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
+
+        $html .= '</div>'; // card-body
+        $html .= '</div>'; // card
+
+        // Technical SEO
+        $html .= '<div class="proseo-card">';
+        $html .= '<div class="proseo-card-header">';
+        $html .= '<h3><i class="material-icons">settings</i> ' . $this->l('Technical SEO') . '</h3>';
+        $html .= '</div>';
+        $html .= '<div class="proseo-card-body">';
+
+        $html .= $this->renderToggle('PROSEOMASTER_ENABLE_CANONICAL', $this->l('Enable Canonical URLs'), $this->l('Prevent duplicate content issues'));
+        $html .= $this->renderToggle('PROSEOMASTER_ENABLE_HREFLANG', $this->l('Enable Hreflang Tags'), $this->l('For multi-language stores'));
+        $html .= $this->renderToggle('PROSEOMASTER_NOINDEX_FILTERED_PAGES', $this->l('Noindex Filtered Pages'), $this->l('Noindex pages with filters applied'));
+        $html .= $this->renderToggle('PROSEOMASTER_NOINDEX_DEEP_PAGINATION', $this->l('Noindex Deep Pagination'), $this->l('Noindex pages beyond page 3'));
+
+        $html .= '</div>'; // card-body
+        $html .= '</div>'; // card
+
+        // Meta Templates
+        $html .= '<div class="proseo-card">';
+        $html .= '<div class="proseo-card-header">';
+        $html .= '<h3><i class="material-icons">text_snippet</i> ' . $this->l('Meta Templates') . '</h3>';
+        $html .= '</div>';
+        $html .= '<div class="proseo-card-body">';
+
+        $html .= '<div class="proseo-alert proseo-alert-info">';
+        $html .= '<i class="material-icons">info</i>';
+        $html .= '<span>' . $this->l('Available variables: {product_name}, {category}, {shop_name}, {price}, {description_short}, {availability}') . '</span>';
+        $html .= '</div>';
+
+        $html .= '<div class="proseo-form-group">';
+        $html .= '<label>' . $this->l('Product Title Template') . '</label>';
+        $html .= '<input type="text" name="PROSEOMASTER_PRODUCT_TITLE_TEMPLATE" class="proseo-input" value="' . htmlspecialchars(Configuration::get('PROSEOMASTER_PRODUCT_TITLE_TEMPLATE'), ENT_QUOTES, 'UTF-8') . '">';
+        $html .= '<div class="hint">' . $this->l('Default: {product_name} | {category} | {shop_name}') . '</div>';
+        $html .= '</div>';
+
+        $html .= '<div class="proseo-form-group">';
+        $html .= '<label>' . $this->l('Product Description Template') . '</label>';
+        $html .= '<textarea name="PROSEOMASTER_PRODUCT_DESC_TEMPLATE" class="proseo-textarea">' . htmlspecialchars(Configuration::get('PROSEOMASTER_PRODUCT_DESC_TEMPLATE'), ENT_QUOTES, 'UTF-8') . '</textarea>';
+        $html .= '</div>';
+
+        $html .= '<div class="proseo-form-group">';
+        $html .= '<label>' . $this->l('Category Title Template') . '</label>';
+        $html .= '<input type="text" name="PROSEOMASTER_CATEGORY_TITLE_TEMPLATE" class="proseo-input" value="' . htmlspecialchars(Configuration::get('PROSEOMASTER_CATEGORY_TITLE_TEMPLATE'), ENT_QUOTES, 'UTF-8') . '">';
+        $html .= '</div>';
+
+        $html .= '<div class="proseo-form-group">';
+        $html .= '<label>' . $this->l('Category Description Template') . '</label>';
+        $html .= '<textarea name="PROSEOMASTER_CATEGORY_DESC_TEMPLATE" class="proseo-textarea">' . htmlspecialchars(Configuration::get('PROSEOMASTER_CATEGORY_DESC_TEMPLATE'), ENT_QUOTES, 'UTF-8') . '</textarea>';
+        $html .= '</div>';
+
+        $html .= '</div>'; // card-body
+        $html .= '</div>'; // card
+
+        // Save Button
+        $html .= '<div class="proseo-btn-group">';
+        $html .= '<button type="submit" name="submitProSEOMasterConfig" class="proseo-btn proseo-btn-primary proseo-btn-lg">';
+        $html .= '<i class="material-icons">save</i> ' . $this->l('Save Settings');
+        $html .= '</button>';
+        $html .= '</div>';
+
+        $html .= '</form>';
+        $html .= '</div>'; // section-meta
+
+        return $html;
+    }
+
+    /**
+     * Render Performance section
+     * @return string
+     */
+    protected function renderSectionPerformance()
+    {
+        $html = '<div id="section-performance" class="proseo-section">';
+
+        $html .= '<div class="proseo-section-header">';
+        $html .= '<h2>' . $this->l('Performance & Core Web Vitals') . '</h2>';
+        $html .= '<p>' . $this->l('Optimize page speed and Core Web Vitals scores.') . '</p>';
+        $html .= '</div>';
+
+        $html .= '<form method="post" id="performance-form">';
+
+        // Core Web Vitals
+        $html .= '<div class="proseo-card">';
+        $html .= '<div class="proseo-card-header">';
+        $html .= '<h3><i class="material-icons">speed</i> ' . $this->l('Core Web Vitals Optimization') . '</h3>';
+        $html .= '</div>';
+        $html .= '<div class="proseo-card-body">';
+
+        $html .= '<div class="proseo-alert proseo-alert-warning">';
+        $html .= '<i class="material-icons">warning</i>';
+        $html .= '<span>' . $this->l('Some options may affect theme appearance. Test thoroughly after enabling.') . '</span>';
+        $html .= '</div>';
+
+        $html .= $this->renderToggle('PROSEOMASTER_ENABLE_LAZY_LOADING', $this->l('Enable Lazy Loading'), $this->l('Defer off-screen images (improves LCP)'));
+        $html .= $this->renderToggle('PROSEOMASTER_ENABLE_IMAGE_DIMENSIONS', $this->l('Add Image Dimensions'), $this->l('Prevent CLS by adding width/height'));
+        $html .= $this->renderToggle('PROSEOMASTER_ENABLE_RESOURCE_HINTS', $this->l('Enable Resource Hints'), $this->l('Preconnect, dns-prefetch for faster loading'));
+        $html .= $this->renderToggle('PROSEOMASTER_ENABLE_IFRAME_OPTIMIZATION', $this->l('Optimize Iframes'), $this->l('Lazy load iframes (YouTube, maps)'));
+
+        $html .= '</div>'; // card-body
+        $html .= '</div>'; // card
+
+        // Advanced Performance
+        $html .= '<div class="proseo-card">';
+        $html .= '<div class="proseo-card-header">';
+        $html .= '<h3><i class="material-icons">tune</i> ' . $this->l('Advanced Performance') . '</h3>';
+        $html .= '</div>';
+        $html .= '<div class="proseo-card-body">';
+
+        $html .= '<div class="proseo-alert proseo-alert-danger">';
+        $html .= '<i class="material-icons">error</i>';
+        $html .= '<span>' . $this->l('These options are disabled by default because they can break your theme. Use with caution!') . '</span>';
+        $html .= '</div>';
+
+        $html .= $this->renderToggle('PROSEOMASTER_ENABLE_DEFER_JS', $this->l('Defer JavaScript'), $this->l('May break some JS functionality'));
+        $html .= $this->renderToggle('PROSEOMASTER_ENABLE_CRITICAL_CSS', $this->l('Inline Critical CSS'), $this->l('Experimental - can break theme styles'));
+        $html .= $this->renderToggle('PROSEOMASTER_ENABLE_FONT_OPTIMIZATION', $this->l('Optimize Google Fonts'), $this->l('Non-blocking font loading'));
+
+        $html .= '</div>'; // card-body
+        $html .= '</div>'; // card
+
+        // .htaccess Generator
+        $html .= '<div class="proseo-card">';
+        $html .= '<div class="proseo-card-header">';
+        $html .= '<h3><i class="material-icons">code</i> ' . $this->l('.htaccess Performance Rules') . '</h3>';
+        $html .= '</div>';
+        $html .= '<div class="proseo-card-body">';
+
+        $html .= '<p>' . $this->l('Generate optimized .htaccess rules for caching, compression, and security.') . '</p>';
+
+        $html .= '<div class="proseo-btn-group">';
+        $html .= '<button type="submit" name="generateHtaccess" class="proseo-btn proseo-btn-secondary">';
+        $html .= '<i class="material-icons">add</i> ' . $this->l('Generate .htaccess Rules');
+        $html .= '</button>';
+        $html .= '</div>';
+
+        $html .= '</div>'; // card-body
+        $html .= '</div>'; // card
+
+        // Save Button
+        $html .= '<div class="proseo-btn-group">';
+        $html .= '<button type="submit" name="submitProSEOMasterConfig" class="proseo-btn proseo-btn-primary proseo-btn-lg">';
+        $html .= '<i class="material-icons">save</i> ' . $this->l('Save Settings');
+        $html .= '</button>';
+        $html .= '</div>';
+
+        $html .= '</form>';
+        $html .= '</div>'; // section-performance
+
+        return $html;
+    }
+
+    /**
+     * Render Sitemap section
+     * @return string
+     */
+    protected function renderSectionSitemap()
+    {
+        $shopUrl = $this->context->link->getPageLink('index', true);
+        $sitemapUrl = $shopUrl . 'sitemap.xml';
+        $robotsUrl = $shopUrl . 'robots.txt';
+        $sitemapDate = Configuration::get('PROSEOMASTER_SITEMAP_LAST_GENERATED');
+        $cronToken = Configuration::get('PROSEOMASTER_CRON_TOKEN');
+
+        if (empty($cronToken)) {
+            $cronToken = $this->generateCronToken();
+            Configuration::updateValue('PROSEOMASTER_CRON_TOKEN', $cronToken);
+        }
+
+        $cronUrl = $shopUrl . 'module/proseomaster/cron?action=sitemap&token=' . $cronToken;
+
+        $html = '<div id="section-sitemap" class="proseo-section">';
+
+        $html .= '<div class="proseo-section-header">';
+        $html .= '<h2>' . $this->l('Sitemap & Robots.txt') . '</h2>';
+        $html .= '<p>' . $this->l('Manage your XML sitemap and robots.txt for search engines.') . '</p>';
+        $html .= '</div>';
+
+        // Sitemap Card
+        $html .= '<div class="proseo-card">';
+        $html .= '<div class="proseo-card-header">';
+        $html .= '<h3><i class="material-icons">map</i> ' . $this->l('XML Sitemap') . '</h3>';
+        $html .= '</div>';
+        $html .= '<div class="proseo-card-body">';
+
+        // Status
+        if ($sitemapDate) {
+            $html .= '<div class="proseo-alert proseo-alert-success">';
+            $html .= '<i class="material-icons">check_circle</i>';
+            $html .= '<span><strong>' . $this->l('Sitemap generated:') . '</strong> ' . date('d/m/Y H:i', strtotime($sitemapDate)) . '</span>';
+            $html .= '</div>';
+        } else {
+            $html .= '<div class="proseo-alert proseo-alert-warning">';
+            $html .= '<i class="material-icons">warning</i>';
+            $html .= '<span>' . $this->l('Sitemap not generated yet. Click the button below to create it.') . '</span>';
+            $html .= '</div>';
+        }
+
+        $html .= '<div class="proseo-form-group">';
+        $html .= '<label>' . $this->l('Sitemap URL') . '</label>';
+        $html .= '<div class="proseo-code-preview">';
+        $html .= '<code>' . htmlspecialchars($sitemapUrl, ENT_QUOTES, 'UTF-8') . '</code>';
+        $html .= '<button type="button" class="proseo-code-copy">' . $this->l('Copy') . '</button>';
+        $html .= '</div>';
+        $html .= '</div>';
+
+        $html .= '<div class="proseo-btn-group">';
+        $html .= '<form method="post" style="display:inline;">';
+        $html .= '<button type="submit" name="generateSitemap" class="proseo-btn proseo-btn-primary">';
+        $html .= '<i class="material-icons">refresh</i> ' . $this->l('Generate Sitemap');
+        $html .= '</button>';
+        $html .= '</form>';
+        $html .= '<a href="' . htmlspecialchars($sitemapUrl, ENT_QUOTES, 'UTF-8') . '" target="_blank" class="proseo-btn proseo-btn-secondary">';
+        $html .= '<i class="material-icons">visibility</i> ' . $this->l('View Sitemap');
+        $html .= '</a>';
+        $html .= '</div>';
+
+        $html .= '</div>'; // card-body
+        $html .= '</div>'; // card
+
+        // Cron Job Card
+        $html .= '<div class="proseo-card">';
+        $html .= '<div class="proseo-card-header">';
+        $html .= '<h3><i class="material-icons">schedule</i> ' . $this->l('Automatic Generation (Cron)') . '</h3>';
+        $html .= '</div>';
+        $html .= '<div class="proseo-card-body">';
+
+        $html .= '<p>' . $this->l('Set up a cron job to automatically regenerate your sitemap daily.') . '</p>';
+
+        $html .= '<div class="proseo-form-group">';
+        $html .= '<label>' . $this->l('Cron URL') . '</label>';
+        $html .= '<div class="proseo-code-preview">';
+        $html .= '<code>' . htmlspecialchars($cronUrl, ENT_QUOTES, 'UTF-8') . '</code>';
+        $html .= '<button type="button" class="proseo-code-copy">' . $this->l('Copy') . '</button>';
+        $html .= '</div>';
+        $html .= '</div>';
+
+        $html .= '<div class="proseo-form-group">';
+        $html .= '<label>' . $this->l('Linux Crontab Example') . '</label>';
+        $html .= '<div class="proseo-code-preview">';
+        $html .= '<code>0 3 * * * curl -s "' . htmlspecialchars($cronUrl, ENT_QUOTES, 'UTF-8') . '" > /dev/null</code>';
+        $html .= '<button type="button" class="proseo-code-copy">' . $this->l('Copy') . '</button>';
+        $html .= '</div>';
+        $html .= '<div class="hint">' . $this->l('This runs every day at 3:00 AM') . '</div>';
+        $html .= '</div>';
+
+        $html .= '<form method="post">';
+        $html .= '<button type="submit" name="regenerateCronToken" class="proseo-btn proseo-btn-warning">';
+        $html .= '<i class="material-icons">autorenew</i> ' . $this->l('Regenerate Token');
+        $html .= '</button>';
+        $html .= '</form>';
+
+        $html .= '</div>'; // card-body
+        $html .= '</div>'; // card
+
+        // Robots.txt Card
+        $html .= '<div class="proseo-card">';
+        $html .= '<div class="proseo-card-header">';
+        $html .= '<h3><i class="material-icons">android</i> ' . $this->l('Robots.txt') . '</h3>';
+        $html .= '</div>';
+        $html .= '<div class="proseo-card-body">';
+
+        $html .= '<p>' . $this->l('Generate an optimized robots.txt with sitemap reference, crawl delays, and bad bot blocking.') . '</p>';
+
+        $html .= '<div class="proseo-btn-group">';
+        $html .= '<form method="post" style="display:inline;">';
+        $html .= '<button type="submit" name="generateRobots" class="proseo-btn proseo-btn-primary">';
+        $html .= '<i class="material-icons">refresh</i> ' . $this->l('Generate Robots.txt');
+        $html .= '</button>';
+        $html .= '</form>';
+        $html .= '<a href="' . htmlspecialchars($robotsUrl, ENT_QUOTES, 'UTF-8') . '" target="_blank" class="proseo-btn proseo-btn-secondary">';
+        $html .= '<i class="material-icons">visibility</i> ' . $this->l('View Robots.txt');
+        $html .= '</a>';
+        $html .= '</div>';
+
+        $html .= '</div>'; // card-body
+        $html .= '</div>'; // card
+
+        $html .= '</div>'; // section-sitemap
+
+        return $html;
+    }
+
+    /**
+     * Render Redirects section
+     * @return string
+     */
+    protected function renderSectionRedirects()
+    {
+        $redirects = new ProSEOMasterRedirects();
+        $stats = $redirects->getStatistics();
+        $allRedirects = $redirects->getAllRedirects(false, 50, 0);
+
+        $html = '<div id="section-redirects" class="proseo-section">';
+
+        $html .= '<div class="proseo-section-header">';
+        $html .= '<h2>' . $this->l('301 Redirect Manager') . '</h2>';
+        $html .= '<p>' . $this->l('Manage URL redirects to preserve SEO value when pages move or are deleted.') . '</p>';
+        $html .= '</div>';
+
+        // Stats
+        $html .= '<div class="proseo-stats-grid">';
+
+        $html .= '<div class="proseo-stat-card primary">';
+        $html .= '<div class="proseo-stat-value">' . $stats['total'] . '</div>';
+        $html .= '<div class="proseo-stat-label">' . $this->l('Total Redirects') . '</div>';
+        $html .= '</div>';
+
+        $html .= '<div class="proseo-stat-card success">';
+        $html .= '<div class="proseo-stat-value">' . $stats['active'] . '</div>';
+        $html .= '<div class="proseo-stat-label">' . $this->l('Active') . '</div>';
+        $html .= '</div>';
+
+        $html .= '<div class="proseo-stat-card warning">';
+        $html .= '<div class="proseo-stat-value">' . $stats['total_hits'] . '</div>';
+        $html .= '<div class="proseo-stat-label">' . $this->l('Total Hits') . '</div>';
+        $html .= '</div>';
+
+        $html .= '<div class="proseo-stat-card secondary">';
+        $html .= '<div class="proseo-stat-value">' . $stats['auto_generated'] . '</div>';
+        $html .= '<div class="proseo-stat-label">' . $this->l('Auto-Generated') . '</div>';
+        $html .= '</div>';
+
+        $html .= '</div>'; // stats-grid
+
+        // Add New Redirect Card
+        $html .= '<div class="proseo-card">';
+        $html .= '<div class="proseo-card-header">';
+        $html .= '<h3><i class="material-icons">add_circle</i> ' . $this->l('Add New Redirect') . '</h3>';
+        $html .= '</div>';
+        $html .= '<div class="proseo-card-body">';
+
+        $html .= '<form method="post" id="add-redirect-form">';
+        $html .= '<div class="proseo-field-row">';
+
+        $html .= '<div class="proseo-form-group">';
+        $html .= '<label>' . $this->l('Old URL') . '</label>';
+        $html .= '<input type="text" name="redirect_old_url" class="proseo-input" placeholder="/old-product-url" required>';
+        $html .= '</div>';
+
+        $html .= '<div class="proseo-form-group">';
+        $html .= '<label>' . $this->l('New URL') . '</label>';
+        $html .= '<input type="text" name="redirect_new_url" class="proseo-input" placeholder="/new-product-url" required>';
+        $html .= '</div>';
+
+        $html .= '</div>';
+
+        $html .= '<div class="proseo-field-row">';
+        $html .= '<div class="proseo-form-group">';
+        $html .= '<label>' . $this->l('Redirect Type') . '</label>';
+        $html .= '<select name="redirect_type" class="proseo-select">';
+        $html .= '<option value="301">301 - ' . $this->l('Permanent (transfers SEO)') . '</option>';
+        $html .= '<option value="302">302 - ' . $this->l('Temporary') . '</option>';
+        $html .= '<option value="307">307 - ' . $this->l('Temporary (strict)') . '</option>';
+        $html .= '<option value="308">308 - ' . $this->l('Permanent (strict)') . '</option>';
+        $html .= '</select>';
+        $html .= '</div>';
+        $html .= '<div class="proseo-form-group" style="display:flex;align-items:flex-end;">';
+        $html .= '<button type="submit" name="addRedirect" class="proseo-btn proseo-btn-primary">';
+        $html .= '<i class="material-icons">add</i> ' . $this->l('Add Redirect');
+        $html .= '</button>';
+        $html .= '</div>';
+        $html .= '</div>';
+
+        $html .= '</form>';
+        $html .= '</div>'; // card-body
+        $html .= '</div>'; // card
+
+        // Import/Export Card
+        $html .= '<div class="proseo-card">';
+        $html .= '<div class="proseo-card-header">';
+        $html .= '<h3><i class="material-icons">swap_horiz</i> ' . $this->l('Import / Export') . '</h3>';
+        $html .= '</div>';
+        $html .= '<div class="proseo-card-body">';
+
+        $html .= '<div class="proseo-grid-2">';
+
+        // Import
+        $html .= '<form method="post" enctype="multipart/form-data">';
+        $html .= '<div class="proseo-form-group">';
+        $html .= '<label>' . $this->l('Import from CSV') . '</label>';
+        $html .= '<input type="file" name="redirect_csv" class="proseo-input" accept=".csv,.txt">';
+        $html .= '<div class="hint">' . $this->l('Format: old_url,new_url,redirect_type') . '</div>';
+        $html .= '</div>';
+        $html .= '<button type="submit" name="importRedirects" class="proseo-btn proseo-btn-secondary">';
+        $html .= '<i class="material-icons">upload</i> ' . $this->l('Import');
+        $html .= '</button>';
+        $html .= '</form>';
+
+        // Export & Clean
+        $html .= '<div>';
+        $html .= '<form method="post" style="display:inline;">';
+        $html .= '<button type="submit" name="exportRedirects" class="proseo-btn proseo-btn-success">';
+        $html .= '<i class="material-icons">download</i> ' . $this->l('Export CSV');
+        $html .= '</button>';
+        $html .= '</form> ';
+        $html .= '<form method="post" style="display:inline;">';
+        $html .= '<button type="submit" name="cleanRedirects" class="proseo-btn proseo-btn-danger" data-confirm="' . $this->l('Delete unused redirects older than 90 days?') . '">';
+        $html .= '<i class="material-icons">delete_sweep</i> ' . $this->l('Clean Old');
+        $html .= '</button>';
+        $html .= '</form>';
+        $html .= '</div>';
+
+        $html .= '</div>'; // grid
+        $html .= '</div>'; // card-body
+        $html .= '</div>'; // card
+
+        // Redirects List Card
+        $html .= '<div class="proseo-card">';
+        $html .= '<div class="proseo-card-header">';
+        $html .= '<h3><i class="material-icons">list</i> ' . $this->l('Active Redirects') . '</h3>';
+        $html .= '</div>';
+        $html .= '<div class="proseo-card-body" style="padding:0;">';
+
+        if (empty($allRedirects)) {
+            $html .= '<div class="proseo-empty">';
+            $html .= '<i class="material-icons">call_split</i>';
+            $html .= '<h4>' . $this->l('No redirects yet') . '</h4>';
+            $html .= '<p>' . $this->l('Add your first redirect above or delete a product to auto-generate one.') . '</p>';
+            $html .= '</div>';
+        } else {
+            $html .= '<table class="proseo-table">';
+            $html .= '<thead><tr>';
+            $html .= '<th>' . $this->l('Old URL') . '</th>';
+            $html .= '<th>' . $this->l('New URL') . '</th>';
+            $html .= '<th>' . $this->l('Type') . '</th>';
+            $html .= '<th>' . $this->l('Hits') . '</th>';
+            $html .= '<th>' . $this->l('Status') . '</th>';
+            $html .= '<th>' . $this->l('Actions') . '</th>';
+            $html .= '</tr></thead>';
+            $html .= '<tbody>';
+
+            foreach ($allRedirects as $redirect) {
+                $html .= '<tr>';
+                $html .= '<td><code>' . htmlspecialchars($redirect['old_url'], ENT_QUOTES, 'UTF-8') . '</code></td>';
+                $html .= '<td><code>' . htmlspecialchars($redirect['new_url'], ENT_QUOTES, 'UTF-8') . '</code></td>';
+                $html .= '<td><span class="proseo-badge proseo-badge-primary">' . $redirect['redirect_type'] . '</span></td>';
+                $html .= '<td>' . $redirect['hits'] . '</td>';
+                $html .= '<td>';
+                if ($redirect['active']) {
+                    $html .= '<span class="proseo-badge proseo-badge-success">' . $this->l('Active') . '</span>';
+                } else {
+                    $html .= '<span class="proseo-badge proseo-badge-danger">' . $this->l('Inactive') . '</span>';
+                }
+                if ($redirect['auto_generated']) {
+                    $html .= ' <span class="proseo-badge proseo-badge-gray">' . $this->l('Auto') . '</span>';
+                }
+                $html .= '</td>';
+                $html .= '<td>';
+                $html .= '<form method="post" style="display:inline;">';
+                $html .= '<input type="hidden" name="id_redirect" value="' . (int) $redirect['id_redirect'] . '">';
+                $html .= '<button type="submit" name="toggleRedirect" class="proseo-btn proseo-btn-sm proseo-btn-secondary" title="' . $this->l('Toggle') . '">';
+                $html .= '<i class="material-icons">power_settings_new</i>';
+                $html .= '</button>';
+                $html .= '</form> ';
+                $html .= '<form method="post" style="display:inline;">';
+                $html .= '<input type="hidden" name="id_redirect" value="' . (int) $redirect['id_redirect'] . '">';
+                $html .= '<button type="submit" name="deleteRedirect" class="proseo-btn proseo-btn-sm proseo-btn-danger" data-confirm="' . $this->l('Delete this redirect?') . '" title="' . $this->l('Delete') . '">';
+                $html .= '<i class="material-icons">delete</i>';
+                $html .= '</button>';
+                $html .= '</form>';
+                $html .= '</td>';
+                $html .= '</tr>';
+            }
+
+            $html .= '</tbody></table>';
+        }
+
+        $html .= '</div>'; // card-body
+        $html .= '</div>'; // card
+
+        $html .= '</div>'; // section-redirects
+
+        return $html;
+    }
+
+    /**
+     * Render Tools section
+     * @return string
+     */
+    protected function renderSectionTools()
+    {
+        $html = '<div id="section-tools" class="proseo-section">';
+
+        $html .= '<div class="proseo-section-header">';
+        $html .= '<h2>' . $this->l('SEO Tools') . '</h2>';
+        $html .= '<p>' . $this->l('Link checker, bulk editor, schema validator, and SEO audit tools.') . '</p>';
+        $html .= '</div>';
+
+        // Tools Cards
+        $html .= '<div class="proseo-card">';
+        $html .= '<div class="proseo-tabs">';
+        $html .= '<button type="button" class="proseo-tab active" data-tab="linkchecker">' . $this->l('Link Checker') . '</button>';
+        $html .= '<button type="button" class="proseo-tab" data-tab="bulkeditor">' . $this->l('Bulk Editor') . '</button>';
+        $html .= '<button type="button" class="proseo-tab" data-tab="schematest">' . $this->l('Schema Test') . '</button>';
+        $html .= '</div>';
+
+        // Link Checker Tab
+        $html .= '<div class="proseo-tab-content active" data-tab="linkchecker">';
+        $html .= '<div class="proseo-card-body">';
+        $html .= '<p>' . $this->l('Scan your store for broken links in product descriptions and CMS pages.') . '</p>';
+
+        $html .= '<form method="post">';
+        $html .= '<div class="proseo-form-group">';
+        $html .= '<label>' . $this->l('Scan Type') . '</label>';
+        $html .= '<select name="scan_type" class="proseo-select" style="max-width:300px;">';
+        $html .= '<option value="quick">' . $this->l('Quick Scan (30 products)') . '</option>';
+        $html .= '<option value="products">' . $this->l('Products Only (100)') . '</option>';
+        $html .= '<option value="cms">' . $this->l('CMS Pages Only') . '</option>';
+        $html .= '<option value="images">' . $this->l('Check Images (100 products)') . '</option>';
+        $html .= '<option value="full">' . $this->l('Full Scan (all products)') . '</option>';
+        $html .= '</select>';
+        $html .= '</div>';
+        $html .= '<div class="proseo-btn-group">';
+        $html .= '<button type="submit" name="runLinkChecker" class="proseo-btn proseo-btn-primary">';
+        $html .= '<i class="material-icons">link_off</i> ' . $this->l('Start Scan');
+        $html .= '</button>';
+        $html .= '</div>';
+        $html .= '</form>';
+
+        $html .= '</div>'; // card-body
+        $html .= '</div>'; // tab-content
+
+        // Bulk Editor Tab
+        $html .= '<div class="proseo-tab-content" data-tab="bulkeditor">';
+        $html .= '<div class="proseo-card-body">';
+        $html .= '<p>' . $this->l('Bulk edit meta titles and descriptions for products and categories.') . '</p>';
+
+        $html .= '<div class="proseo-grid-2">';
+
+        // Export
+        $html .= '<div>';
+        $html .= '<h4>' . $this->l('Export SEO Data') . '</h4>';
+        $html .= '<p>' . $this->l('Download all products with their current meta tags.') . '</p>';
+        $html .= '<form method="post">';
+        $html .= '<button type="submit" name="exportSeoData" class="proseo-btn proseo-btn-success">';
+        $html .= '<i class="material-icons">download</i> ' . $this->l('Export CSV');
+        $html .= '</button>';
+        $html .= '</form>';
+        $html .= '</div>';
+
+        // Import
+        $html .= '<div>';
+        $html .= '<h4>' . $this->l('Import SEO Data') . '</h4>';
+        $html .= '<p>' . $this->l('Upload modified CSV to update meta tags.') . '</p>';
+        $html .= '<form method="post" enctype="multipart/form-data">';
+        $html .= '<div class="proseo-form-group">';
+        $html .= '<input type="file" name="seo_import_file" class="proseo-input" accept=".csv">';
+        $html .= '</div>';
+        $html .= '<button type="submit" name="importSeoData" class="proseo-btn proseo-btn-secondary">';
+        $html .= '<i class="material-icons">upload</i> ' . $this->l('Import CSV');
+        $html .= '</button>';
+        $html .= '</form>';
+        $html .= '</div>';
+
+        $html .= '</div>'; // grid
+
+        $html .= '<div class="proseo-alert proseo-alert-info" style="margin-top:20px;">';
+        $html .= '<i class="material-icons">info</i>';
+        $html .= '<span>' . $this->l('Tip: Export first to get the correct format, then modify only the Meta Title and Meta Description columns.') . '</span>';
+        $html .= '</div>';
+
+        $html .= '</div>'; // card-body
+        $html .= '</div>'; // tab-content
+
+        // Schema Test Tab
+        $html .= '<div class="proseo-tab-content" data-tab="schematest">';
+        $html .= '<div class="proseo-card-body">';
+        $html .= '<p>' . $this->l('Test and validate schema markup for your products.') . '</p>';
+
+        $html .= '<form method="post">';
+        $html .= '<div class="proseo-form-group">';
+        $html .= '<label>' . $this->l('Product ID') . '</label>';
+        $html .= '<input type="number" name="test_product_id" class="proseo-input" style="max-width:200px;" placeholder="123" min="1">';
+        $html .= '</div>';
+        $html .= '<div class="proseo-btn-group">';
+        $html .= '<button type="submit" name="testProductSchema" class="proseo-btn proseo-btn-primary">';
+        $html .= '<i class="material-icons">science</i> ' . $this->l('Test Schema');
+        $html .= '</button>';
+        $html .= '<button type="submit" name="auditAllSchemas" class="proseo-btn proseo-btn-secondary">';
+        $html .= '<i class="material-icons">checklist</i> ' . $this->l('Audit All Products');
+        $html .= '</button>';
+        $html .= '</div>';
+        $html .= '</form>';
+
+        $html .= '</div>'; // card-body
+        $html .= '</div>'; // tab-content
+
+        $html .= '</div>'; // card
+
+        $html .= '</div>'; // section-tools
+
+        return $html;
+    }
+
+    /**
+     * Render AI SEO section
+     * @return string
+     */
+    protected function renderSectionAI()
+    {
+        $shopUrl = $this->context->link->getPageLink('index', true);
+        $llmsUrl = $shopUrl . 'module/proseomaster/llms';
+        $llmsFullUrl = $shopUrl . 'module/proseomaster/llms?full=1';
+
+        $html = '<div id="section-ai" class="proseo-section">';
+
+        $html .= '<div class="proseo-section-header">';
+        $html .= '<h2>' . $this->l('AI SEO & LLM Optimization') . '</h2>';
+        $html .= '<p>' . $this->l('Optimize your store for AI crawlers like GPTBot, Claude, and Perplexity.') . '</p>';
+        $html .= '</div>';
+
+        $html .= '<form method="post" id="ai-form">';
+
+        // AI Settings Card
+        $html .= '<div class="proseo-card">';
+        $html .= '<div class="proseo-card-header">';
+        $html .= '<h3><i class="material-icons">smart_toy</i> ' . $this->l('AI Crawler Settings') . '</h3>';
+        $html .= '</div>';
+        $html .= '<div class="proseo-card-body">';
+
+        $html .= $this->renderToggle('PROSEOMASTER_ENABLE_AI_SEO', $this->l('Enable AI SEO'), $this->l('Master switch for all AI features'));
+        $html .= $this->renderToggle('PROSEOMASTER_ENABLE_LLMS_TXT', $this->l('Enable llms.txt'), $this->l('Generate llms.txt file for LLM crawlers'));
+        $html .= $this->renderToggle('PROSEOMASTER_ENABLE_AI_META_TAGS', $this->l('Enable AI Meta Tags'), $this->l('Add meta tags for GPTBot, Claude-Web, etc.'));
+
+        $html .= '</div>'; // card-body
+        $html .= '</div>'; // card
+
+        // LLMS.txt Info Card
+        $html .= '<div class="proseo-card">';
+        $html .= '<div class="proseo-card-header">';
+        $html .= '<h3><i class="material-icons">description</i> ' . $this->l('LLMS.txt Files') . '</h3>';
+        $html .= '</div>';
+        $html .= '<div class="proseo-card-body">';
+
+        $html .= '<p>' . $this->l('LLMS.txt is a standard format that helps AI models understand your website structure.') . '</p>';
+
+        $html .= '<div class="proseo-field-row">';
+
+        $html .= '<div class="proseo-form-group">';
+        $html .= '<label>' . $this->l('Basic Version') . '</label>';
+        $html .= '<div class="proseo-code-preview">';
+        $html .= '<code>' . htmlspecialchars($llmsUrl, ENT_QUOTES, 'UTF-8') . '</code>';
+        $html .= '<button type="button" class="proseo-code-copy">' . $this->l('Copy') . '</button>';
+        $html .= '</div>';
+        $html .= '</div>';
+
+        $html .= '<div class="proseo-form-group">';
+        $html .= '<label>' . $this->l('Full Version') . '</label>';
+        $html .= '<div class="proseo-code-preview">';
+        $html .= '<code>' . htmlspecialchars($llmsFullUrl, ENT_QUOTES, 'UTF-8') . '</code>';
+        $html .= '<button type="button" class="proseo-code-copy">' . $this->l('Copy') . '</button>';
+        $html .= '</div>';
+        $html .= '</div>';
+
+        $html .= '</div>';
+
+        $html .= '<div class="proseo-btn-group">';
+        $html .= '<a href="' . htmlspecialchars($llmsUrl, ENT_QUOTES, 'UTF-8') . '" target="_blank" class="proseo-btn proseo-btn-secondary">';
+        $html .= '<i class="material-icons">visibility</i> ' . $this->l('View llms.txt');
+        $html .= '</a>';
+        $html .= '<a href="' . htmlspecialchars($llmsFullUrl, ENT_QUOTES, 'UTF-8') . '" target="_blank" class="proseo-btn proseo-btn-secondary">';
+        $html .= '<i class="material-icons">visibility</i> ' . $this->l('View llms-full.txt');
+        $html .= '</a>';
+        $html .= '</div>';
+
+        $html .= '</div>'; // card-body
+        $html .= '</div>'; // card
+
+        // AI Crawlers Info
+        $html .= '<div class="proseo-info-box">';
+        $html .= '<h4><i class="material-icons">info</i> ' . $this->l('Supported AI Crawlers') . '</h4>';
+        $html .= '<ul>';
+        $html .= '<li><strong>GPTBot</strong> - OpenAI (ChatGPT)</li>';
+        $html .= '<li><strong>Claude-Web</strong> - Anthropic (Claude)</li>';
+        $html .= '<li><strong>Google-Extended</strong> - Google Gemini</li>';
+        $html .= '<li><strong>PerplexityBot</strong> - Perplexity AI</li>';
+        $html .= '<li><strong>YouBot</strong> - You.com</li>';
+        $html .= '</ul>';
+        $html .= '</div>';
+
+        // Save Button
+        $html .= '<div class="proseo-btn-group">';
+        $html .= '<button type="submit" name="submitProSEOMasterConfig" class="proseo-btn proseo-btn-primary proseo-btn-lg">';
+        $html .= '<i class="material-icons">save</i> ' . $this->l('Save Settings');
+        $html .= '</button>';
+        $html .= '</div>';
+
+        $html .= '</form>';
+        $html .= '</div>'; // section-ai
 
         return $html;
     }
