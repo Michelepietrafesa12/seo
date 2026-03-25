@@ -13,6 +13,7 @@
                 </div>
                 <div class="card-body">
                     <form id="addRedirectForm">
+                        <input type="hidden" name="_token" value="{{ csrf_token('proseomaster_redirect') }}">
                         <div class="form-group">
                             <label>{{ 'Old URL'|trans({}, 'Modules.Proseomaster.Admin') }}:</label>
                             <input type="text" name="old_url" class="form-control" placeholder="/old-page.html" required>

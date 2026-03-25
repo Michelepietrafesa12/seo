@@ -212,6 +212,17 @@ class ProSEOMaster extends Module
             'PROSEOMASTER_TEXT_BACKORDER' => 'Disponibile su ordinazione',
             // Meta description template
             'PROSEOMASTER_META_DESCRIPTION_TEMPLATE' => '{description_short} Acquista {product_name} online. {availability}. Spedizione veloce.',
+            // Blocked bots for robots.txt
+            'PROSEOMASTER_BLOCKED_BOTS' => 'AhrefsBot,SemrushBot,MJ12bot,DotBot,BLEXBot,SearchmetricsBot',
+            // IndexNow key (generated on first use if empty)
+            'PROSEOMASTER_INDEXNOW_KEY' => '',
+            // Resource hints configuration
+            'PROSEOMASTER_HINT_GOOGLE_FONTS' => 0,
+            'PROSEOMASTER_HINT_GOOGLE_ANALYTICS' => 0,
+            'PROSEOMASTER_HINT_FACEBOOK' => 0,
+            'PROSEOMASTER_HINT_TWITTER' => 0,
+            'PROSEOMASTER_HINT_CDN' => 0,
+            'PROSEOMASTER_GTM_ID' => '',
         );
 
         foreach ($defaultConfig as $key => $value) {
@@ -1945,7 +1956,7 @@ class ProSEOMaster extends Module
         // Validate specific schema types
         $type = $schema['@type'];
 
-        // Product schema must have name and offers
+        // Product schema must have name, offers, and image (Google Merchant requirement)
         if ($type === 'Product') {
             if (empty($cleanedSchema['name'])) {
                 PrestaShopLogger::addLog(
@@ -1959,6 +1970,15 @@ class ProSEOMaster extends Module
             if (empty($cleanedSchema['offers'])) {
                 PrestaShopLogger::addLog(
                     'ProSEOMaster: Product schema missing required offers',
+                    2,
+                    null,
+                    'ProSEOMaster'
+                );
+                return null;
+            }
+            if (empty($cleanedSchema['image'])) {
+                PrestaShopLogger::addLog(
+                    'ProSEOMaster: Product schema missing required image - skipped for Google Merchant compliance',
                     2,
                     null,
                     'ProSEOMaster'
@@ -2698,7 +2718,7 @@ class ProSEOMaster extends Module
             }
         }
 
-        return array(
+        $schema = array(
             '@type' => 'OfferShippingDetails',
             '@id' => $shopUrl . '#shipping',
             'shippingDestination' => array(
