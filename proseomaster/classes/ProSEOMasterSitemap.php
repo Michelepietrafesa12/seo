@@ -97,8 +97,8 @@ class ProSEOMasterSitemap
                     $urlNode->addChild('changefreq', $changefreq);
                     $urlNode->addChild('priority', $priority);
 
-                    // Add product images
-                    $images = $this->getProductImages((int) $product['id_product'], $idLang);
+                    // Add product images (pass link_rewrite to avoid extra SQL query)
+                    $images = $this->getProductImages((int) $product['id_product'], $idLang, $product['link_rewrite']);
                     foreach ($images as $image) {
                         $imageNode = $urlNode->addChild('image:image', null, 'http://www.google.com/schemas/sitemap-image/1.1');
                         $imageNode->addChild('image:loc', htmlspecialchars($image['url']), 'http://www.google.com/schemas/sitemap-image/1.1');
@@ -175,7 +175,15 @@ class ProSEOMasterSitemap
             $idLang = (int) $lang['id_lang'];
             $langIso = $lang['iso_code'];
 
-            $cmsPages = CMS::listCms($idLang, false, true);
+            // Get CMS pages with date for lastmod (PrestaShop CMS doesn't have date_upd, use date_add)
+            $sql = new DbQuery();
+            $sql->select('c.id_cms, cl.link_rewrite, c.date_add');
+            $sql->from('cms', 'c');
+            $sql->innerJoin('cms_lang', 'cl', 'c.id_cms = cl.id_cms AND cl.id_lang = ' . (int) $idLang);
+            $sql->innerJoin('cms_shop', 'cs', 'c.id_cms = cs.id_cms AND cs.id_shop = ' . (int) $this->context->shop->id);
+            $sql->where('c.active = 1');
+
+            $cmsPages = Db::getInstance()->executeS($sql);
             if (empty($cmsPages)) {
                 continue;
             }
@@ -187,6 +195,8 @@ class ProSEOMasterSitemap
 
                 $urlNode = $xml->addChild('url');
                 $urlNode->addChild('loc', htmlspecialchars($url));
+                // Use date_add as lastmod (CMS pages rarely change after creation)
+                $urlNode->addChild('lastmod', date('Y-m-d', strtotime($cms['date_add'])));
                 $urlNode->addChild('changefreq', 'monthly');
                 $urlNode->addChild('priority', '0.5');
             }
@@ -198,6 +208,7 @@ class ProSEOMasterSitemap
 
     /**
      * Generate manufacturer sitemap
+     * Priority varies based on whether manufacturer has description content
      */
     protected function generateManufacturerSitemap()
     {
@@ -208,7 +219,15 @@ class ProSEOMasterSitemap
             $idLang = (int) $lang['id_lang'];
             $langIso = $lang['iso_code'];
 
-            $manufacturers = Manufacturer::getManufacturers(false, $idLang, true);
+            // Get manufacturers with description to determine priority
+            $sql = new DbQuery();
+            $sql->select('m.id_manufacturer, m.date_upd, ml.description, ml.short_description');
+            $sql->from('manufacturer', 'm');
+            $sql->innerJoin('manufacturer_lang', 'ml', 'm.id_manufacturer = ml.id_manufacturer AND ml.id_lang = ' . (int) $idLang);
+            $sql->innerJoin('manufacturer_shop', 'ms', 'm.id_manufacturer = ms.id_manufacturer AND ms.id_shop = ' . (int) $this->context->shop->id);
+            $sql->where('m.active = 1');
+
+            $manufacturers = Db::getInstance()->executeS($sql);
             if (empty($manufacturers)) {
                 continue;
             }
@@ -218,10 +237,16 @@ class ProSEOMasterSitemap
             foreach ($manufacturers as $manufacturer) {
                 $url = $link->getManufacturerLink((int) $manufacturer['id_manufacturer'], null, $idLang);
 
+                // Higher priority for manufacturers with meaningful description (100+ chars)
+                $hasContent = !empty($manufacturer['description']) && strlen(strip_tags($manufacturer['description'])) > 100;
+                $hasShortDesc = !empty($manufacturer['short_description']) && strlen(strip_tags($manufacturer['short_description'])) > 50;
+                $priority = ($hasContent || $hasShortDesc) ? '0.7' : '0.5';
+
                 $urlNode = $xml->addChild('url');
                 $urlNode->addChild('loc', htmlspecialchars($url));
+                $urlNode->addChild('lastmod', date('Y-m-d', strtotime($manufacturer['date_upd'])));
                 $urlNode->addChild('changefreq', 'weekly');
-                $urlNode->addChild('priority', '0.6');
+                $urlNode->addChild('priority', $priority);
             }
 
             $filename = 'sitemap_manufacturers_' . $langIso . '.xml';
@@ -274,14 +299,19 @@ class ProSEOMasterSitemap
         $languages = Language::getLanguages(true, $this->context->shop->id);
         $link = $this->context->link;
 
+        // Static pages with lastmod calculation
+        // Daily pages: today's date (content changes daily)
+        // Weekly/monthly pages: fixed date
+        $today = date('Y-m-d');
+
         $staticPages = array(
-            'index' => array('priority' => '1.0', 'changefreq' => 'daily'),
-            'contact' => array('priority' => '0.5', 'changefreq' => 'monthly'),
-            'sitemap' => array('priority' => '0.3', 'changefreq' => 'weekly'),
-            'stores' => array('priority' => '0.5', 'changefreq' => 'monthly'),
-            'new-products' => array('priority' => '0.7', 'changefreq' => 'daily'),
-            'best-sales' => array('priority' => '0.7', 'changefreq' => 'daily'),
-            'prices-drop' => array('priority' => '0.7', 'changefreq' => 'daily'),
+            'index' => array('priority' => '1.0', 'changefreq' => 'daily', 'lastmod' => $today),
+            'contact' => array('priority' => '0.5', 'changefreq' => 'monthly', 'lastmod' => date('Y-m-01')),
+            'sitemap' => array('priority' => '0.3', 'changefreq' => 'weekly', 'lastmod' => $today),
+            'stores' => array('priority' => '0.5', 'changefreq' => 'monthly', 'lastmod' => date('Y-m-01')),
+            'new-products' => array('priority' => '0.7', 'changefreq' => 'daily', 'lastmod' => $today),
+            'best-sales' => array('priority' => '0.7', 'changefreq' => 'daily', 'lastmod' => $today),
+            'prices-drop' => array('priority' => '0.7', 'changefreq' => 'daily', 'lastmod' => $today),
         );
 
         foreach ($languages as $lang) {
@@ -295,6 +325,7 @@ class ProSEOMasterSitemap
 
                 $urlNode = $xml->addChild('url');
                 $urlNode->addChild('loc', htmlspecialchars($url));
+                $urlNode->addChild('lastmod', $settings['lastmod']);
                 $urlNode->addChild('changefreq', $settings['changefreq']);
                 $urlNode->addChild('priority', $settings['priority']);
             }
@@ -403,18 +434,25 @@ class ProSEOMasterSitemap
      */
     protected function getActiveProducts($idLang)
     {
-        $sql = new DbQuery();
-        $sql->select('p.id_product, pl.link_rewrite, p.date_upd, p.date_add, ps.price,
-                      (SELECT SUM(od.product_quantity) FROM ' . _DB_PREFIX_ . 'order_detail od
-                       INNER JOIN ' . _DB_PREFIX_ . 'orders o ON od.id_order = o.id_order
-                       WHERE od.product_id = p.id_product AND o.valid = 1
-                       AND o.date_add > DATE_SUB(NOW(), INTERVAL 30 DAY)) as sales_30d');
-        $sql->from('product', 'p');
-        $sql->innerJoin('product_lang', 'pl', 'p.id_product = pl.id_product AND pl.id_lang = ' . (int) $idLang);
-        $sql->innerJoin('product_shop', 'ps', 'p.id_product = ps.id_product AND ps.id_shop = ' . (int) $this->context->shop->id);
-        $sql->where('ps.active = 1');
-        $sql->where('ps.visibility IN ("both", "catalog", "search")');
-        $sql->orderBy('p.date_upd DESC');
+        // Optimized query with LEFT JOIN instead of correlated subquery for sales
+        // This is much faster on large catalogs (2000+ products)
+        $sql = 'SELECT p.id_product, pl.link_rewrite, p.date_upd, p.date_add, ps.price,
+                       COALESCE(sales.total_qty, 0) as sales_30d
+                FROM ' . _DB_PREFIX_ . 'product p
+                INNER JOIN ' . _DB_PREFIX_ . 'product_lang pl
+                    ON p.id_product = pl.id_product AND pl.id_lang = ' . (int) $idLang . '
+                INNER JOIN ' . _DB_PREFIX_ . 'product_shop ps
+                    ON p.id_product = ps.id_product AND ps.id_shop = ' . (int) $this->context->shop->id . '
+                LEFT JOIN (
+                    SELECT od.product_id, SUM(od.product_quantity) as total_qty
+                    FROM ' . _DB_PREFIX_ . 'order_detail od
+                    INNER JOIN ' . _DB_PREFIX_ . 'orders o ON od.id_order = o.id_order
+                    WHERE o.valid = 1 AND o.date_add > DATE_SUB(NOW(), INTERVAL 30 DAY)
+                    GROUP BY od.product_id
+                ) sales ON p.id_product = sales.product_id
+                WHERE ps.active = 1
+                AND ps.visibility IN ("both", "catalog")
+                ORDER BY p.date_upd DESC';
 
         return Db::getInstance()->executeS($sql);
     }
@@ -438,20 +476,43 @@ class ProSEOMasterSitemap
     }
 
     /**
-     * Get product images
+     * Get product images using direct SQL query
+     * Optimized to avoid loading full Product object for each product
      * @param int $idProduct
      * @param int $idLang
+     * @param string $linkRewrite Product link_rewrite (passed from product data)
      * @return array
      */
-    protected function getProductImages($idProduct, $idLang)
+    protected function getProductImages($idProduct, $idLang, $linkRewrite = '')
     {
         $images = array();
-        $product = new Product($idProduct, false, $idLang);
-        $productImages = $product->getImages($idLang);
 
-        foreach ($productImages as $img) {
+        // Direct SQL query - avoids loading full Product object
+        $sql = new DbQuery();
+        $sql->select('i.id_image, il.legend');
+        $sql->from('image', 'i');
+        $sql->innerJoin('image_shop', 'ish', 'i.id_image = ish.id_image AND ish.id_shop = ' . (int) $this->context->shop->id);
+        $sql->leftJoin('image_lang', 'il', 'i.id_image = il.id_image AND il.id_lang = ' . (int) $idLang);
+        $sql->where('i.id_product = ' . (int) $idProduct);
+        $sql->orderBy('i.position ASC');
+
+        $rows = Db::getInstance()->executeS($sql);
+
+        if (empty($rows)) {
+            return $images;
+        }
+
+        // If link_rewrite not provided, get it
+        if (empty($linkRewrite)) {
+            $linkRewrite = Db::getInstance()->getValue(
+                'SELECT link_rewrite FROM ' . _DB_PREFIX_ . 'product_lang
+                 WHERE id_product = ' . (int) $idProduct . ' AND id_lang = ' . (int) $idLang
+            );
+        }
+
+        foreach ($rows as $img) {
             $imageUrl = $this->context->link->getImageLink(
-                $product->link_rewrite,
+                $linkRewrite,
                 $idProduct . '-' . $img['id_image'],
                 ImageType::getFormattedName('large')
             );
@@ -739,20 +800,34 @@ class ProSEOMasterSitemap
 
     /**
      * Submit sitemap to search engines
+     * Note: Google Ping API was deprecated in 2023, use Search Console instead
+     * Bing and IndexNow still work
      * @return array Results
      */
     public function submitToSearchEngines()
     {
         $sitemapUrl = $this->context->link->getBaseLink() . 'sitemap.xml';
+        $baseUrl = $this->context->link->getBaseLink();
         $results = array();
 
-        // Google
-        $googleUrl = 'https://www.google.com/ping?sitemap=' . urlencode($sitemapUrl);
-        $results['google'] = $this->pingUrl($googleUrl);
+        // Google: Deprecated in 2023 - use Google Search Console API or submit via robots.txt
+        $results['google'] = array(
+            'submitted' => false,
+            'message' => 'Google Ping API deprecated. Submit via Search Console or robots.txt'
+        );
 
-        // Bing
+        // Bing (still works)
         $bingUrl = 'https://www.bing.com/ping?sitemap=' . urlencode($sitemapUrl);
         $results['bing'] = $this->pingUrl($bingUrl);
+
+        // IndexNow API (supported by Bing, Yandex, Seznam, Naver)
+        // Requires an API key file at /indexnow_key.txt
+        $indexNowKey = Configuration::get('PROSEOMASTER_INDEXNOW_KEY');
+        if (!empty($indexNowKey)) {
+            $indexNowUrl = 'https://api.indexnow.org/indexnow?url=' . urlencode($sitemapUrl)
+                         . '&key=' . urlencode($indexNowKey);
+            $results['indexnow'] = $this->pingUrl($indexNowUrl);
+        }
 
         return $results;
     }
