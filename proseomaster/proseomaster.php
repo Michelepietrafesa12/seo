@@ -1498,12 +1498,28 @@ class ProSEOMaster extends Module
             $reasons[] = $page;
         }
 
+        // 4. Noindex disabled/hidden products (active=0 or visibility='none')
+        if ($page === 'product' && isset($this->context->smarty->tpl_vars['product'])) {
+            $productData = $this->context->smarty->tpl_vars['product']->value ?? array();
+            if (is_array($productData)) {
+                // Check if product is disabled
+                if (isset($productData['active']) && !$productData['active']) {
+                    $noindex = true;
+                    $reasons[] = 'product-disabled';
+                }
+                // Check if product visibility is 'none' (hidden from catalog and search)
+                if (isset($productData['visibility']) && $productData['visibility'] === 'none') {
+                    $noindex = true;
+                    $reasons[] = 'product-hidden';
+                }
+            }
+        }
+
         if (!$noindex) {
             return '';
         }
 
-        return '<!-- ProSEO Master: Robots (' . implode(', ', $reasons) . ') -->' . "\n" .
-               '<meta name="robots" content="noindex, follow" />' . "\n";
+        return '<meta name="robots" content="noindex, follow" />' . "\n";
     }
 
     /**
@@ -1536,7 +1552,8 @@ class ProSEOMaster extends Module
         }
 
         // Check for common filter modules URL patterns
-        if (preg_match('/[?&](from|to|min|max|orderby|orderway|n=\d+)/', $requestUri)) {
+        // Note: n=\d+ needs word boundary to avoid matching token=abc123n=...
+        if (preg_match('/[?&](from|to|min|max|orderby|orderway)=/', $requestUri) || preg_match('/[?&]n=\d+(&|$)/', $requestUri)) {
             return true;
         }
 
@@ -1565,7 +1582,11 @@ class ProSEOMaster extends Module
         if ($page === 'product' && isset($this->context->smarty->tpl_vars['product'])) {
             $product = $this->context->smarty->tpl_vars['product']->value ?? array();
             if (is_array($product)) {
-                $title = $product['name'] ?? $title;
+                // Use optimized meta title from PrestaShop, fallback to product name
+                // Note: $title already contains meta title from pageVars, only override if empty
+                if (empty($title) && !empty($product['name'])) {
+                    $title = $product['name'];
+                }
 
                 // Description fallback chain for products
                 if (!empty($product['description_short'])) {
@@ -1601,8 +1622,7 @@ class ProSEOMaster extends Module
 
         // Open Graph Tags
         if (Configuration::get('PROSEOMASTER_ENABLE_OG_TAGS')) {
-            $output .= '<!-- ProSEO Master: Open Graph -->' . "\n";
-            $output .= '<meta property="og:type" content="' . ($page === 'product' ? 'product' : 'website') . '" />' . "\n";
+                        $output .= '<meta property="og:type" content="' . ($page === 'product' ? 'product' : 'website') . '" />' . "\n";
             $output .= '<meta property="og:title" content="' . htmlspecialchars($title, ENT_QUOTES, 'UTF-8') . '" />' . "\n";
             $output .= '<meta property="og:description" content="' . htmlspecialchars(Tools::truncateString($description, 200), ENT_QUOTES, 'UTF-8') . '" />' . "\n";
             $output .= '<meta property="og:url" content="' . htmlspecialchars($url, ENT_QUOTES, 'UTF-8') . '" />' . "\n";
@@ -1621,20 +1641,34 @@ class ProSEOMaster extends Module
                 }
             }
 
-            // Product-specific OG tags
+            // Product-specific OG tags (Open Graph protocol for product type)
             if ($page === 'product' && isset($product) && is_array($product)) {
+                // Price (required)
                 if (!empty($product['price_amount'])) {
                     $output .= '<meta property="product:price:amount" content="' . $product['price_amount'] . '" />' . "\n";
                     $output .= '<meta property="product:price:currency" content="' . $this->context->currency->iso_code . '" />' . "\n";
                 }
+
+                // Availability (required)
                 $output .= '<meta property="product:availability" content="' . ($product['quantity'] > 0 ? 'in stock' : 'out of stock') . '" />' . "\n";
+
+                // Retailer Item ID (required for og:type product)
+                $output .= '<meta property="product:retailer_item_id" content="' . (int) $product['id_product'] . '" />' . "\n";
+
+                // Condition (required)
+                $condition = isset($product['condition']) ? $product['condition'] : 'new';
+                $output .= '<meta property="product:condition" content="' . htmlspecialchars($condition, ENT_QUOTES, 'UTF-8') . '" />' . "\n";
+
+                // Brand (required if available)
+                if (!empty($product['manufacturer_name'])) {
+                    $output .= '<meta property="product:brand" content="' . htmlspecialchars($product['manufacturer_name'], ENT_QUOTES, 'UTF-8') . '" />' . "\n";
+                }
             }
         }
 
         // Twitter Cards
         if (Configuration::get('PROSEOMASTER_ENABLE_TWITTER_CARDS')) {
-            $output .= '<!-- ProSEO Master: Twitter Cards -->' . "\n";
-            $output .= '<meta name="twitter:card" content="summary_large_image" />' . "\n";
+                        $output .= '<meta name="twitter:card" content="summary_large_image" />' . "\n";
             $output .= '<meta name="twitter:title" content="' . htmlspecialchars($title, ENT_QUOTES, 'UTF-8') . '" />' . "\n";
             $output .= '<meta name="twitter:description" content="' . htmlspecialchars(Tools::truncateString($description, 200), ENT_QUOTES, 'UTF-8') . '" />' . "\n";
 
@@ -1665,8 +1699,7 @@ class ProSEOMaster extends Module
             return $output;
         }
 
-        $output .= '<!-- ProSEO Master: Hreflang -->' . "\n";
-        $controller = $this->context->controller;
+                $controller = $this->context->controller;
         $page = $controller->getPageName();
 
         // Get default country for language-country format
@@ -1841,12 +1874,13 @@ class ProSEOMaster extends Module
 
         // Output all schemas with validation
         if (!empty($schemas)) {
-            $output .= '<!-- ProSEO Master: JSON-LD Schema -->' . "\n";
+            $output .= '' . "\n";
             foreach ($schemas as $schema) {
                 // Validate schema before output
                 $validatedSchema = $this->validateJsonLdSchema($schema);
                 if ($validatedSchema !== null) {
-                    $jsonOutput = json_encode($validatedSchema, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+                    // Compact JSON in production (no pretty print to reduce page size)
+                    $jsonOutput = json_encode($validatedSchema, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
                     // Verify JSON encoding was successful
                     if ($jsonOutput !== false && json_last_error() === JSON_ERROR_NONE) {
                         $output .= '<script type="application/ld+json">' . "\n";
@@ -2432,16 +2466,8 @@ class ProSEOMaster extends Module
             $schema['additionalProperty'] = $features;
         }
 
-        // Merchant Return Policy - Required by Google Merchant Center
-        $returnPolicy = $this->generateReturnPolicySchema();
-        if (!empty($returnPolicy)) {
-            $schema['offers']['hasMerchantReturnPolicy'] = $returnPolicy;
-        }
-
-        // Shipping details in offer
-        if (isset($schema['offers']) && is_array($schema['offers'])) {
-            $schema['offers']['shippingDetails'] = $this->generateShippingSchema();
-        }
+        // Note: hasMerchantReturnPolicy and shippingDetails are added inside
+        // generateOfferSchema() and generateAggregateOfferSchema() to avoid duplication
 
         // Add promotion/discount schema if product has active discount
         $promotion = $this->generatePromotionSchema($product);
@@ -2536,7 +2562,12 @@ class ProSEOMaster extends Module
             return null;
         }
 
-        $combinations = $product->getAttributeCombinations($this->context->language->id);
+        // Cache combinations to avoid multiple SQL queries (color, size, material all call this)
+        $cacheKey = 'product_combinations_' . (int) $product->id;
+        if (!isset($this->runtimeCache[$cacheKey])) {
+            $this->runtimeCache[$cacheKey] = $product->getAttributeCombinations($this->context->language->id);
+        }
+        $combinations = $this->runtimeCache[$cacheKey];
 
         foreach ($combinations as $combination) {
             $groupName = strtolower($combination['group_name']);
@@ -3370,9 +3401,18 @@ class ProSEOMaster extends Module
             return null;
         }
 
-        $product = new Product((int) $productData['id_product'], true, $this->context->language->id);
-        if (!Validate::isLoadedObject($product)) {
-            return null;
+        $idProduct = (int) $productData['id_product'];
+        $cacheKey = 'product_object_' . $idProduct;
+
+        // Use cached product object to avoid duplicate SQL queries
+        if (!isset($this->runtimeCache[$cacheKey])) {
+            $product = new Product($idProduct, true, $this->context->language->id);
+            if (!Validate::isLoadedObject($product)) {
+                return null;
+            }
+            $this->runtimeCache[$cacheKey] = $product;
+        } else {
+            $product = $this->runtimeCache[$cacheKey];
         }
 
         $faqItems = array();
@@ -3400,29 +3440,10 @@ class ProSEOMaster extends Module
             }
         }
 
-        // 2. Add availability FAQ
-        $quantity = Product::getQuantity($product->id);
-        $faqItems[] = array(
-            '@type' => 'Question',
-            'name' => sprintf($this->l('Is %s available?'), $product->name),
-            'acceptedAnswer' => array(
-                '@type' => 'Answer',
-                'text' => $quantity > 0
-                    ? sprintf($this->l('Yes, %s is currently available and ready to ship.'), $product->name)
-                    : sprintf($this->l('Currently %s is not available. Contact us for availability information.'), $product->name),
-            ),
-        );
+        // Note: Generic availability/shipping FAQs removed - Google penalizes auto-generated
+        // low-quality FAQ content. Only real product features generate FAQ schema.
 
-        // 3. Add shipping FAQ if applicable
-        $faqItems[] = array(
-            '@type' => 'Question',
-            'name' => sprintf($this->l('What are the shipping times for %s?'), $product->name),
-            'acceptedAnswer' => array(
-                '@type' => 'Answer',
-                'text' => sprintf($this->l('Shipping of %s usually occurs within 1-2 business days from order confirmation. Delivery times vary based on destination.'), $product->name),
-            ),
-        );
-
+        // Require at least 2 real FAQ items from features to output schema
         if (count($faqItems) < 2) {
             return null;
         }
@@ -3710,9 +3731,10 @@ class ProSEOMaster extends Module
             $html = $performance->optimizeIframes($html);
         }
 
-        // 5. Add fetchpriority to LCP candidates
-        // SAFE on checkout
-        if (Configuration::get('PROSEOMASTER_ENABLE_LAZY_LOADING')) {
+        // 5. Add fetchpriority to LCP candidates (only if lazy loading is disabled)
+        // Note: addLazyLoading already adds fetchpriority="high" to above-fold images
+        // This is only needed when lazy loading is disabled but we still want fetchpriority
+        if (!Configuration::get('PROSEOMASTER_ENABLE_LAZY_LOADING') && Configuration::get('PROSEOMASTER_ENABLE_IMAGE_DIMENSIONS')) {
             $html = $performance->addFetchPriority($html);
         }
 
