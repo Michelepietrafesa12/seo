@@ -175,9 +175,9 @@ class ProSEOMasterSitemap
             $idLang = (int) $lang['id_lang'];
             $langIso = $lang['iso_code'];
 
-            // Get CMS pages with date for lastmod (PrestaShop CMS doesn't have date_upd, use date_add)
+            // Get CMS pages
             $sql = new DbQuery();
-            $sql->select('c.id_cms, cl.link_rewrite, c.date_add');
+            $sql->select('c.id_cms, cl.link_rewrite');
             $sql->from('cms', 'c');
             $sql->innerJoin('cms_lang', 'cl', 'c.id_cms = cl.id_cms AND cl.id_lang = ' . (int) $idLang);
             $sql->innerJoin('cms_shop', 'cs', 'c.id_cms = cs.id_cms AND cs.id_shop = ' . (int) $this->context->shop->id);
@@ -195,8 +195,7 @@ class ProSEOMasterSitemap
 
                 $urlNode = $xml->addChild('url');
                 $urlNode->addChild('loc', htmlspecialchars($url));
-                // Use date_add as lastmod (CMS pages rarely change after creation)
-                $urlNode->addChild('lastmod', date('Y-m-d', strtotime($cms['date_add'])));
+                $urlNode->addChild('lastmod', date('Y-m-d'));
                 $urlNode->addChild('changefreq', 'monthly');
                 $urlNode->addChild('priority', '0.5');
             }
