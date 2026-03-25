@@ -314,7 +314,7 @@ class ProSEOMasterSchemaAdvanced
             'price' => number_format($priceWithTax, 2, '.', ''),
             'availability' => $quantity > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
             'itemCondition' => $this->mapCondition($product->condition),
-            'priceValidUntil' => date('Y-m-d', strtotime('+1 year')),
+            'priceValidUntil' => date('Y-m-d', strtotime('+30 days')),
             'seller' => array(
                 '@type' => 'Organization',
                 'name' => Configuration::get('PS_SHOP_NAME'),
@@ -326,7 +326,7 @@ class ProSEOMasterSchemaAdvanced
             '@type' => 'OfferShippingDetails',
             'shippingDestination' => array(
                 '@type' => 'DefinedRegion',
-                'addressCountry' => $this->context->country->iso_code,
+                'addressCountry' => Country::getIsoById((int) Configuration::get('PS_COUNTRY_DEFAULT')),
             ),
             'deliveryTime' => array(
                 '@type' => 'ShippingDeliveryTime',
@@ -348,7 +348,7 @@ class ProSEOMasterSchemaAdvanced
         // Return policy (Google Shopping requirement)
         $schema['offers']['hasMerchantReturnPolicy'] = array(
             '@type' => 'MerchantReturnPolicy',
-            'applicableCountry' => $this->context->country->iso_code,
+            'returnPolicyCountry' => Country::getIsoById((int) Configuration::get('PS_COUNTRY_DEFAULT')),
             'returnPolicyCategory' => 'https://schema.org/MerchantReturnFiniteReturnWindow',
             'merchantReturnDays' => 14,
             'returnMethod' => 'https://schema.org/ReturnByMail',

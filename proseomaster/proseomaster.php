@@ -164,7 +164,7 @@ class ProSEOMaster extends Module
             'PROSEOMASTER_ENABLE_TWITTER_CARDS' => 1,
             'PROSEOMASTER_ENABLE_CANONICAL' => 1,
             'PROSEOMASTER_ENABLE_HREFLANG' => 1,
-            'PROSEOMASTER_ENABLE_FAQ_SCHEMA' => 1,
+            'PROSEOMASTER_ENABLE_FAQ_SCHEMA' => 0, // Disabled: Google removed FAQ rich results for e-commerce (Aug 2023)
             'PROSEOMASTER_ENABLE_REVIEW_SCHEMA' => 1,
             'PROSEOMASTER_MIN_REVIEWS_AGGREGATE' => 1,
             'PROSEOMASTER_GTIN_FIELD' => 'ean13',
@@ -2654,7 +2654,7 @@ class ProSEOMaster extends Module
         $policy = array(
             '@type' => 'MerchantReturnPolicy',
             '@id' => $shopUrl . '#returnpolicy',
-            'applicableCountry' => $this->context->country->iso_code,
+            'returnPolicyCountry' => Country::getIsoById((int) Configuration::get('PS_COUNTRY_DEFAULT')),
             'returnPolicyCategory' => $policyCategory,
             'returnMethod' => 'https://schema.org/' . $returnMethod,
             'returnFees' => 'https://schema.org/' . $returnFees,
@@ -2703,7 +2703,7 @@ class ProSEOMaster extends Module
             '@id' => $shopUrl . '#shipping',
             'shippingDestination' => array(
                 '@type' => 'DefinedRegion',
-                'addressCountry' => $this->context->country->iso_code,
+                'addressCountry' => Country::getIsoById((int) Configuration::get('PS_COUNTRY_DEFAULT')),
             ),
             'shippingRate' => array(
                 '@type' => 'MonetaryAmount',
@@ -2929,8 +2929,8 @@ class ProSEOMaster extends Module
         if ($specificPrice && !empty($specificPrice['to']) && $specificPrice['to'] !== '0000-00-00 00:00:00') {
             $offer['priceValidUntil'] = date('Y-m-d', strtotime($specificPrice['to']));
         } else {
-            // Default: price valid for 1 year
-            $offer['priceValidUntil'] = date('Y-m-d', strtotime('+1 year'));
+            // Default: price valid for 30 days (shorter period to avoid stale pricing)
+            $offer['priceValidUntil'] = date('Y-m-d', strtotime('+30 days'));
         }
 
         // Shipping information (if applicable)
