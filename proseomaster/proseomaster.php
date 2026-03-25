@@ -114,6 +114,17 @@ class ProSEOMaster extends Module
         'PROSEOMASTER_TEXT_BACKORDER',
         // Meta description template
         'PROSEOMASTER_META_DESCRIPTION_TEMPLATE',
+        // IndexNow
+        'PROSEOMASTER_INDEXNOW_KEY',
+        // Blocked bots (robots.txt)
+        'PROSEOMASTER_BLOCKED_BOTS',
+        // Resource hints configuration
+        'PROSEOMASTER_HINT_GOOGLE_FONTS',
+        'PROSEOMASTER_HINT_GOOGLE_ANALYTICS',
+        'PROSEOMASTER_HINT_FACEBOOK',
+        'PROSEOMASTER_HINT_TWITTER',
+        'PROSEOMASTER_HINT_CDN',
+        'PROSEOMASTER_GTM_ID',
     );
 
     /** @var array Runtime cache to avoid duplicate SQL queries within same request */
@@ -196,11 +207,11 @@ class ProSEOMaster extends Module
             // Variants
             'PROSEOMASTER_ENABLE_VARIANT_SCHEMA' => 1,
             // Availability text (translatable)
-            'PROSEOMASTER_TEXT_IN_STOCK' => 'In Stock',
-            'PROSEOMASTER_TEXT_OUT_OF_STOCK' => 'Out of Stock',
-            'PROSEOMASTER_TEXT_BACKORDER' => 'Available on backorder',
+            'PROSEOMASTER_TEXT_IN_STOCK' => 'Disponibile',
+            'PROSEOMASTER_TEXT_OUT_OF_STOCK' => 'Non disponibile',
+            'PROSEOMASTER_TEXT_BACKORDER' => 'Disponibile su ordinazione',
             // Meta description template
-            'PROSEOMASTER_META_DESCRIPTION_TEMPLATE' => '{description_short} Buy {product_name} online. {availability}. Fast shipping.',
+            'PROSEOMASTER_META_DESCRIPTION_TEMPLATE' => '{description_short} Acquista {product_name} online. {availability}. Spedizione veloce.',
         );
 
         foreach ($defaultConfig as $key => $value) {
@@ -1515,11 +1526,16 @@ class ProSEOMaster extends Module
             }
         }
 
-        if (!$noindex) {
-            return '';
+        if ($noindex) {
+            return '<meta name="robots" content="noindex, follow" />' . "\n";
         }
 
-        return '<meta name="robots" content="noindex, follow" />' . "\n";
+        // If not noindex and AI meta tags enabled, emit full robots directive with AI-friendly settings
+        if (Configuration::get('PROSEOMASTER_ENABLE_AI_META_TAGS')) {
+            return '<meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />' . "\n";
+        }
+
+        return '';
     }
 
     /**
@@ -4314,23 +4330,31 @@ class ProSEOMaster extends Module
     /**
      * Hook: actionProductDelete
      * Create automatic redirect when product is deleted
+     * Note: Product is already deleted from DB when this hook runs,
+     * so we use $params['product'] (still in memory) instead of loading from DB
      * @param array $params
      */
     public function hookActionProductDelete($params)
     {
-        if (!isset($params['id_product'])) {
-            return;
+        $idProduct = 0;
+        $idCategoryDefault = 2; // Home category as fallback
+
+        // Try to get product object from params (still in memory)
+        if (isset($params['product']) && is_object($params['product'])) {
+            $product = $params['product'];
+            $idProduct = (int) $product->id;
+            $idCategoryDefault = (int) $product->id_category_default ?: 2;
+        } elseif (isset($params['id_product'])) {
+            // Fallback to just id_product with home category
+            $idProduct = (int) $params['id_product'];
         }
 
-        $idProduct = (int) $params['id_product'];
-        $product = new Product($idProduct, true, $this->context->language->id);
-
-        if (!Validate::isLoadedObject($product)) {
+        if ($idProduct <= 0) {
             return;
         }
 
         $redirects = new ProSEOMasterRedirects();
-        $redirects->autoRedirectDeletedProduct($idProduct, $product->id_category_default);
+        $redirects->autoRedirectDeletedProduct($idProduct, $idCategoryDefault);
     }
 
     /**

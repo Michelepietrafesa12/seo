@@ -441,21 +441,15 @@ class ProSEOMasterAI
 
     /**
      * Generate AI-specific meta tags for header
+     * Note: robots/googlebot/bingbot tags removed to avoid conflict with generateRobotsMetaTag()
      * @return string
      */
     public function generateAIMetaTags()
     {
-        $output = '<!-- ProSEO Master: AI Optimization Meta Tags -->' . "\n";
+        $output = '';
 
         // AI content declaration - tells AI systems this is legitimate e-commerce content
         $output .= '<meta name="ai-content-declaration" content="This is an official e-commerce website with real products and services." />' . "\n";
-
-        // Allow AI to process and cite this content
-        $output .= '<meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />' . "\n";
-
-        // Specific AI crawler permissions
-        $output .= '<meta name="googlebot" content="index, follow, max-snippet:-1, max-image-preview:large" />' . "\n";
-        $output .= '<meta name="bingbot" content="index, follow" />' . "\n";
 
         // Google AI Overviews specific
         $output .= '<meta name="google" content="notranslate, nopagereadaloud" />' . "\n";

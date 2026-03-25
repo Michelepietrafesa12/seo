@@ -100,17 +100,17 @@ class ProSEOMasterMeta
         if (empty($template)) {
             // Default template with call-to-action keywords (configurable via admin)
             $defaultTemplate = Configuration::get('PROSEOMASTER_META_DESCRIPTION_TEMPLATE');
-            $template = !empty($defaultTemplate) ? $defaultTemplate : '{description_short} Buy {product_name} online. {availability}. Fast shipping.';
+            $template = !empty($defaultTemplate) ? $defaultTemplate : '{description_short} Acquista {product_name} online. {availability}. Spedizione veloce.';
         }
 
         // Get availability text (configurable via admin for translations)
         $quantity = Product::getQuantity($product->id);
         if ($quantity > 0) {
-            $availability = Configuration::get('PROSEOMASTER_TEXT_IN_STOCK') ?: 'In Stock';
+            $availability = Configuration::get('PROSEOMASTER_TEXT_IN_STOCK') ?: 'Disponibile';
         } elseif ($product->out_of_stock == 1) {
-            $availability = Configuration::get('PROSEOMASTER_TEXT_BACKORDER') ?: 'Available on backorder';
+            $availability = Configuration::get('PROSEOMASTER_TEXT_BACKORDER') ?: 'Disponibile su ordinazione';
         } else {
-            $availability = Configuration::get('PROSEOMASTER_TEXT_OUT_OF_STOCK') ?: 'Out of Stock';
+            $availability = Configuration::get('PROSEOMASTER_TEXT_OUT_OF_STOCK') ?: 'Non disponibile';
         }
 
         $descriptionShort = strip_tags($product->description_short);
@@ -212,20 +212,20 @@ class ProSEOMasterMeta
     {
         $output = '';
 
-        // Clean base URL from existing page parameters
-        $baseUrl = preg_replace('/[?&]page=\d+/', '', $baseUrl);
+        // Clean base URL from existing page parameters (PrestaShop uses 'p' for pagination)
+        $baseUrl = preg_replace('/[?&]p=\d+/', '', $baseUrl);
         $separator = strpos($baseUrl, '?') !== false ? '&' : '?';
 
         // rel="prev"
         if ($currentPage > 1) {
             $prevPage = $currentPage - 1;
-            $prevUrl = $prevPage === 1 ? $baseUrl : $baseUrl . $separator . 'page=' . $prevPage;
+            $prevUrl = $prevPage === 1 ? $baseUrl : $baseUrl . $separator . 'p=' . $prevPage;
             $output .= '<link rel="prev" href="' . htmlspecialchars($prevUrl) . '" />' . "\n";
         }
 
         // rel="next"
         if ($currentPage < $totalPages) {
-            $nextUrl = $baseUrl . $separator . 'page=' . ($currentPage + 1);
+            $nextUrl = $baseUrl . $separator . 'p=' . ($currentPage + 1);
             $output .= '<link rel="next" href="' . htmlspecialchars($nextUrl) . '" />' . "\n";
         }
 

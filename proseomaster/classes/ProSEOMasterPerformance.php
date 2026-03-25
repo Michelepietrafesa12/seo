@@ -65,34 +65,52 @@ class ProSEOMasterPerformance
 
     /**
      * Generate resource hints (preconnect, dns-prefetch)
+     * Only generates hints for services that are actually enabled/configured
      * @return string
      */
     public function generateResourceHints()
     {
-        $output = '<!-- ProSEO Master: Resource Hints -->' . "\n";
+        $output = '';
+        $preconnectDomains = array();
+        $dnsPrefetchDomains = array();
 
-        // Preconnect to critical origins (improves TTFB for external resources)
-        $preconnectDomains = array(
-            'https://fonts.googleapis.com',
-            'https://fonts.gstatic.com',
-            'https://www.googletagmanager.com',
-            'https://www.google-analytics.com',
-        );
+        // Google Fonts - only if theme uses them (check configuration)
+        if (Configuration::get('PROSEOMASTER_HINT_GOOGLE_FONTS')) {
+            $preconnectDomains[] = 'https://fonts.googleapis.com';
+            $preconnectDomains[] = 'https://fonts.gstatic.com';
+        }
 
+        // Google Analytics/Tag Manager - only if tracking is configured
+        $gaId = Configuration::get('PS_GOOGLE_ANALYTICS_ID');
+        $gtmId = Configuration::get('PROSEOMASTER_GTM_ID');
+        if ($gaId || $gtmId || Configuration::get('PROSEOMASTER_HINT_GOOGLE_ANALYTICS')) {
+            $preconnectDomains[] = 'https://www.googletagmanager.com';
+            $preconnectDomains[] = 'https://www.google-analytics.com';
+        }
+
+        // Social - only if social modules are enabled
+        if (Module::isEnabled('ps_facebook') || Configuration::get('PROSEOMASTER_HINT_FACEBOOK')) {
+            $dnsPrefetchDomains[] = 'connect.facebook.net';
+            $dnsPrefetchDomains[] = 'www.facebook.com';
+        }
+
+        if (Configuration::get('PROSEOMASTER_HINT_TWITTER')) {
+            $dnsPrefetchDomains[] = 'platform.twitter.com';
+        }
+
+        // CDNs - only if configured
+        if (Configuration::get('PROSEOMASTER_HINT_CDN')) {
+            $dnsPrefetchDomains[] = 'cdn.jsdelivr.net';
+            $dnsPrefetchDomains[] = 'cdnjs.cloudflare.com';
+            $dnsPrefetchDomains[] = 'ajax.googleapis.com';
+        }
+
+        // Generate preconnect tags
         foreach ($preconnectDomains as $domain) {
             $output .= '<link rel="preconnect" href="' . $domain . '" crossorigin>' . "\n";
         }
 
-        // DNS-Prefetch for other domains
-        $dnsPrefetchDomains = array(
-            'connect.facebook.net',
-            'www.facebook.com',
-            'platform.twitter.com',
-            'cdn.jsdelivr.net',
-            'cdnjs.cloudflare.com',
-            'ajax.googleapis.com',
-        );
-
+        // Generate dns-prefetch tags
         foreach ($dnsPrefetchDomains as $domain) {
             $output .= '<link rel="dns-prefetch" href="//' . $domain . '">' . "\n";
         }
@@ -122,7 +140,7 @@ class ProSEOMasterPerformance
      */
     public function generatePreloadTags($pageType)
     {
-        $output = '<!-- ProSEO Master: Preload Critical Resources -->' . "\n";
+        $output = '';
 
         // Preload logo (always critical)
         $logo = Configuration::get('PS_LOGO');
@@ -298,7 +316,7 @@ class ProSEOMasterPerformance
      */
     public function getCriticalCss($pageType)
     {
-        $css = '<!-- ProSEO Master: Anti-CLS CSS -->' . "\n";
+        $css = '';
         $css .= '<style id="proseo-cls-prevention">';
 
         // MINIMAL CSS - Only dimensions and aspect-ratios to prevent CLS

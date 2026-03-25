@@ -68,20 +68,19 @@ class ProSEOMasterRobots
         $lines[] = 'Crawl-delay: 2';
         $lines[] = '';
 
-        // Bad bots (block completely)
-        $lines[] = '# Block bad bots';
-        $badBots = array(
-            'AhrefsBot',
-            'SemrushBot',
-            'MJ12bot',
-            'DotBot',
-            'BLEXBot',
-            'SearchmetricsBot',
-        );
-        foreach ($badBots as $bot) {
-            $lines[] = 'User-agent: ' . $bot;
-            $lines[] = 'Disallow: /';
-            $lines[] = '';
+        // Bad bots (block completely) - configurable via admin
+        $defaultBadBots = 'AhrefsBot,SemrushBot,MJ12bot,DotBot,BLEXBot,SearchmetricsBot';
+        $configuredBots = Configuration::get('PROSEOMASTER_BLOCKED_BOTS');
+        $badBotsString = $configuredBots !== false && $configuredBots !== '' ? $configuredBots : $defaultBadBots;
+        $badBots = array_filter(array_map('trim', explode(',', $badBotsString)));
+
+        if (!empty($badBots)) {
+            $lines[] = '# Block bad bots';
+            foreach ($badBots as $bot) {
+                $lines[] = 'User-agent: ' . $bot;
+                $lines[] = 'Disallow: /';
+                $lines[] = '';
+            }
         }
 
         // Sitemap
