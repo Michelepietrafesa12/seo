@@ -1622,7 +1622,7 @@ class ProSEOMaster extends Module
 
         // Open Graph Tags
         if (Configuration::get('PROSEOMASTER_ENABLE_OG_TAGS')) {
-                        $output .= '<meta property="og:type" content="' . ($page === 'product' ? 'product' : 'website') . '" />' . "\n";
+            $output .= '<meta property="og:type" content="' . ($page === 'product' ? 'product' : 'website') . '" />' . "\n";
             $output .= '<meta property="og:title" content="' . htmlspecialchars($title, ENT_QUOTES, 'UTF-8') . '" />' . "\n";
             $output .= '<meta property="og:description" content="' . htmlspecialchars(Tools::truncateString($description, 200), ENT_QUOTES, 'UTF-8') . '" />' . "\n";
             $output .= '<meta property="og:url" content="' . htmlspecialchars($url, ENT_QUOTES, 'UTF-8') . '" />' . "\n";
@@ -1668,7 +1668,7 @@ class ProSEOMaster extends Module
 
         // Twitter Cards
         if (Configuration::get('PROSEOMASTER_ENABLE_TWITTER_CARDS')) {
-                        $output .= '<meta name="twitter:card" content="summary_large_image" />' . "\n";
+            $output .= '<meta name="twitter:card" content="summary_large_image" />' . "\n";
             $output .= '<meta name="twitter:title" content="' . htmlspecialchars($title, ENT_QUOTES, 'UTF-8') . '" />' . "\n";
             $output .= '<meta name="twitter:description" content="' . htmlspecialchars(Tools::truncateString($description, 200), ENT_QUOTES, 'UTF-8') . '" />' . "\n";
 
@@ -1699,7 +1699,7 @@ class ProSEOMaster extends Module
             return $output;
         }
 
-                $controller = $this->context->controller;
+        $controller = $this->context->controller;
         $page = $controller->getPageName();
 
         // Get default country for language-country format
@@ -1874,7 +1874,6 @@ class ProSEOMaster extends Module
 
         // Output all schemas with validation
         if (!empty($schemas)) {
-            $output .= '' . "\n";
             foreach ($schemas as $schema) {
                 // Validate schema before output
                 $validatedSchema = $this->validateJsonLdSchema($schema);
@@ -2303,9 +2302,17 @@ class ProSEOMaster extends Module
             return null;
         }
 
-        $product = new Product((int) $productData['id_product'], true, $this->context->language->id);
-        if (!Validate::isLoadedObject($product)) {
-            return null;
+        // Cache Product object to avoid duplicate SQL queries (used by generateFAQSchema too)
+        $idProduct = (int) $productData['id_product'];
+        $cacheKey = 'product_object_' . $idProduct;
+        if (!isset($this->runtimeCache[$cacheKey])) {
+            $product = new Product($idProduct, true, $this->context->language->id);
+            if (!Validate::isLoadedObject($product)) {
+                return null;
+            }
+            $this->runtimeCache[$cacheKey] = $product;
+        } else {
+            $product = $this->runtimeCache[$cacheKey];
         }
 
         $shopUrl = $this->context->link->getPageLink('index', true);
@@ -2916,6 +2923,12 @@ class ProSEOMaster extends Module
             $offer['shippingDetails'] = $shippingInfo;
         }
 
+        // Return policy - Required by Google Merchant Center
+        $returnPolicy = $this->generateReturnPolicySchema();
+        if (!empty($returnPolicy)) {
+            $offer['hasMerchantReturnPolicy'] = $returnPolicy;
+        }
+
         return $offer;
     }
 
@@ -2928,7 +2941,13 @@ class ProSEOMaster extends Module
     protected function generateAggregateOfferSchema($product, $productUrl)
     {
         $currency = $this->context->currency->iso_code;
-        $combinations = $product->getAttributeCombinations($this->context->language->id);
+
+        // Use cached combinations to avoid duplicate SQL queries
+        $cacheKey = 'product_combinations_' . (int) $product->id;
+        if (!isset($this->runtimeCache[$cacheKey])) {
+            $this->runtimeCache[$cacheKey] = $product->getAttributeCombinations($this->context->language->id);
+        }
+        $combinations = $this->runtimeCache[$cacheKey];
 
         if (empty($combinations)) {
             // Fallback to single offer if no combinations found
