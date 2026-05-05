@@ -314,7 +314,7 @@ class ProSEOMasterSchemaAdvanced
             'price' => number_format($priceWithTax, 2, '.', ''),
             'availability' => $quantity > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
             'itemCondition' => $this->mapCondition($product->condition),
-            'priceValidUntil' => date('Y-m-d', strtotime('+30 days')),
+            'priceValidUntil' => date('Y-m-d', strtotime('+365 days')),
             'seller' => array(
                 '@type' => 'Organization',
                 'name' => Configuration::get('PS_SHOP_NAME'),

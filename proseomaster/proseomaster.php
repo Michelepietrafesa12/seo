@@ -2949,8 +2949,8 @@ class ProSEOMaster extends Module
         if ($specificPrice && !empty($specificPrice['to']) && $specificPrice['to'] !== '0000-00-00 00:00:00') {
             $offer['priceValidUntil'] = date('Y-m-d', strtotime($specificPrice['to']));
         } else {
-            // Default: price valid for 30 days (shorter period to avoid stale pricing)
-            $offer['priceValidUntil'] = date('Y-m-d', strtotime('+30 days'));
+            // Default: price valid for 365 days
+            $offer['priceValidUntil'] = date('Y-m-d', strtotime('+365 days'));
         }
 
         // Shipping information (if applicable)
